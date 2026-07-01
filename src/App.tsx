@@ -54,6 +54,17 @@ export default function App() {
   const [sharedScheme, setSharedScheme] = useState<RatingScheme | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Safety fallback for loading state
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Loading timeout reached, forcing app to display.");
+        setIsLoading(false);
+      }
+    }, 5000); // 5 second safety net
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   const [activeTab, setActiveTab] = useState<"chart" | "table">("table");
   const [editingRecord, setEditingRecord] = useState<ArmyRatingRecord | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
