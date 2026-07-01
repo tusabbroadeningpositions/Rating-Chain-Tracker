@@ -13,8 +13,15 @@ export default function Auth({ user, isSharedView }: AuthProps) {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error);
+      if (error.code === "auth/unauthorized-domain") {
+        alert(
+          "This domain is not authorized in Firebase. \n\nPlease go to Firebase Console > Authentication > Settings > Authorized Domains and add this website's domain to the list."
+        );
+      } else {
+        alert("Login failed: " + (error.message || "Unknown error"));
+      }
     }
   };
 
