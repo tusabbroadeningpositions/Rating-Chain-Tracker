@@ -40,8 +40,13 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [schemes, setSchemes] = useState<RatingScheme[]>([]);
   const [activeSchemeId, setActiveSchemeId] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("share") || localStorage.getItem(ACTIVE_SCHEME_KEY);
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("share") || localStorage.getItem(ACTIVE_SCHEME_KEY);
+    } catch (e) {
+      console.warn("localStorage not available:", e);
+      return null;
+    }
   });
   const [records, setRecords] = useState<ArmyRatingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
