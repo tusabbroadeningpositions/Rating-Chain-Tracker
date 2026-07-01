@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- ENTITY SCHEMAS & VALIDATION BLUEPRINTS ---
+
+    function isValidRatingScheme(data) {
+      return data.keys().hasAll(['id', 'name', 'userId']) &&
+             data.keys().size() <= 7 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             (!data.keys().hasAny(['isShared']) || data.isShared is bool) &&
+             (!data.keys().hasAny(['allowEdit']) || data.allowEdit is bool) &&
+             (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp || data.createdAt == null) &&
+             (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
+    }
+
+    function isValidArmyRatingRecord(data) {
+      return data.keys().hasAll(['id', 'schemeId', 'userId', 'element', 'rank', 'name', 'role']) &&
+             data.keys().size() <= 21 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.schemeId is string && data.schemeId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.element is string && data.element.size() <= 100 &&
+             data.rank is string && data.rank.size() <= 50 &&
+             data.name is string && data.name.size() <= 150 &&
+             data.role is string && data.role.size() <= 150 &&
+             (!data.keys().hasAny(['dutyMosc']) || (data.dutyMosc is string && data.dutyMosc.size() <= 50)) &&
+             (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 20)) &&
+             (!data.keys().hasAny(['thru']) || (data.thru is string && data.thru.size() <= 20)) &&
+             (!data.keys().hasAny(['dueHqda']) || (data.dueHqda is string && data.dueHqda.size() <= 20)) &&
+             (!data.keys().hasAny(['raterId']) || (data.raterId is string && data.raterId.size() <= 128)) &&
+             (!data.keys().hasAny(['raterEffectiveDate']) || (data.raterEffectiveDate is string && data.raterEffectiveDate.size() <= 20)) &&
+             (!data.keys().hasAny(['seniorRaterId']) || (data.seniorRaterId is string && data.seniorRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['seniorRaterEffectiveDate']) || (data.seniorRaterEffectiveDate is string && data.seniorRaterEffectiveDate.size() <= 20)) &&
+             (!data.keys().hasAny(['reviewerId']) || (data.reviewerId is string && data.reviewerId.size() <= 128)) &&
+             (!data.keys().hasAny(['reviewerEffectiveDate']) || (data.reviewerEffectiveDate is string && data.reviewerEffectiveDate.size() <= 20)) &&
+             (!data.keys().hasAny(['submissionType']) || (data.submissionType is string && data.submissionType.size() <= 50)) &&
+             (!data.keys().hasAny(['version']) || (data.version is string && data.version.size() <= 50)) &&
+             (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
+    }
+
+    // --- MASTER GATE SCHEME AUTHENTICATION ---
+
+    function isSchemeOwner(sId) {
+      return exists(/databases/$(database)/documents/schemes/$(sId)) &&
+             get(/databases/$(database)/documents/schemes/$(sId)).data.userId == request.auth.uid;
+    }
+
+    function isSchemeEditable(sId) {
+      return exists(/databases/$(database)/documents/schemes/$(sId)) && (
+        get(/databases/$(database)/documents/schemes/$(sId)).data.userId == request.auth.uid || (
+          get(/databases/$(database)/documents/schemes/$(sId)).data.isShared == true &&
+          get(/databases/$(database)/documents/schemes/$(sId)).data.allowEdit == true
+        )
+      );
+    }
+
+    function isSchemeReadable(sId) {
+      return exists(/databases/$(database)/documents/schemes/$(sId)) && (
+        get(/databases/$(database)/documents/schemes/$(sId)).data.userId == request.auth.uid ||
+        get(/databases/$(database)/documents/schemes/$(sId)).data.isShared == true
+      );
+    }
+
+    // --- COLLECTION MATCHES ---
+
+    match /schemes/{schemeId} {
+      allow get: if isValidId(schemeId) && (
+        isOwner(resource.data.userId) || resource.data.isShared == true
+      );
+      
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isValidId(schemeId) &&
+                    isValidRatingScheme(incoming()) &&
+                    isOwner(incoming().userId) &&
+                    incoming().createdAt == request.time &&
+                    incoming().updatedAt == request.time;
+                    
+      allow update: if isValidId(schemeId) &&
+                    isValidRatingScheme(incoming()) &&
+                    isOwner(existing().userId) && (
+                      // Action: Rename
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Toggle Share
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['isShared', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Toggle Edit
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'updatedAt']) && incoming().updatedAt == request.time)
+                    );
+                    
+      allow delete: if isValidId(schemeId) && isOwner(resource.data.userId);
+    }
+
+    match /records/{recordId} {
+      allow get: if isValidId(recordId) && (
+        isOwner(resource.data.userId) || isSchemeReadable(resource.data.schemeId)
+      );
+      
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || 
+                     isSchemeReadable(resource.data.schemeId);
+      
+      allow create: if isValidId(recordId) &&
+                    isValidArmyRatingRecord(incoming()) &&
+                    isSchemeEditable(incoming().schemeId);
+                    
+      allow update: if isValidId(recordId) &&
+                    isValidArmyRatingRecord(incoming()) &&
+                    isSchemeEditable(existing().schemeId) && (
+                      // Immutable constraints on id, userId, and schemeId are guaranteed by ensuring they are not part of update-changed fields
+                      incoming().diff(existing()).affectedKeys().hasOnly([
+                        'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
+                        'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
+                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 'updatedAt'
+                      ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
+                    );
+                    
+      allow delete: if isValidId(recordId) && isSchemeEditable(resource.data.schemeId);
+    }
+  }
+}

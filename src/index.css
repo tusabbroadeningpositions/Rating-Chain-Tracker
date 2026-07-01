@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .rotate-270 {
+    transform: rotate(270deg);
+  }
+}
+
+/* Print CSS optimization for high-fidelity landscape PDF export */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 0.2in;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  /* Hide non-chart interactive elements */
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  /* Ensure the chart occupies full printable width and is ink-saving */
+  #org-chart-canvas {
+    transform: scale(1) !important;
+    min-width: 100% !important;
+    width: 100% !important;
+    color: black !important;
+  }
+  
+  /* Render background colors in PDFs correctly */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Make the main canvas dark background white for printing */
+  .bg-slate-900 {
+    background-color: white !important;
+    border-color: #cbd5e1 !important;
+  }
+  
+  .text-white {
+    color: black !important;
+  }
+  
+  .border-slate-950 {
+    border-color: #cbd5e1 !important;
+  }
+}
+

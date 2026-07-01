@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Army Rating Scheme Org Chart Tracker",
+  "description": "An interactive tracker for Army rating schemes that builds a hierarchical org chart and exports it to PowerPoint PPTX, PDF, or image.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

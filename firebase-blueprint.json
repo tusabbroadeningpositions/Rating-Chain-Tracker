@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "RatingScheme": {
+      "title": "Rating Scheme",
+      "description": "A rating scheme profile created by a user containing multiple rating records.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique document ID of the rating scheme."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the rating scheme (e.g. 'Blues Rating Scheme')."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The creator or owner of this scheme."
+        },
+        "isShared": {
+          "type": "boolean",
+          "description": "Whether the scheme is publicly shared for read access."
+        },
+        "allowEdit": {
+          "type": "boolean",
+          "description": "Whether anyone can edit the records in this scheme if it is shared."
+        },
+        "createdAt": {
+          "type": "object",
+          "description": "Firestore server timestamp representing the creation time."
+        },
+        "updatedAt": {
+          "type": "object",
+          "description": "Firestore server timestamp representing the last update time."
+        }
+      },
+      "required": ["id", "name", "userId"]
+    },
+    "ArmyRatingRecord": {
+      "title": "Army Rating Record",
+      "description": "An individual rating record within a scheme representing a soldier and their rating chain links.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique ID of the rating record."
+        },
+        "schemeId": {
+          "type": "string",
+          "description": "The ID of the parent RatingScheme."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The owner of the record."
+        },
+        "element": {
+          "type": "string",
+          "description": "Section or element of the soldier (e.g. Brass, Woodwinds)."
+        },
+        "dutyMosc": {
+          "type": "string",
+          "description": "Duty MOSC (e.g. 42R, 42S)."
+        },
+        "rank": {
+          "type": "string",
+          "description": "Rank of the soldier (e.g. MAJ, SGM, SFC)."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the soldier (Last, First)."
+        },
+        "from": {
+          "type": "string",
+          "description": "The rating period from date (YYYY-MM-DD)."
+        },
+        "thru": {
+          "type": "string",
+          "description": "The rating period thru date (YYYY-MM-DD)."
+        },
+        "dueHqda": {
+          "type": "string",
+          "description": "Due to HQDA date (YYYY-MM-DD)."
+        },
+        "raterId": {
+          "type": "string",
+          "description": "The document ID of the rater."
+        },
+        "raterEffectiveDate": {
+          "type": "string",
+          "description": "Effective date of the rater (YYYY-MM-DD)."
+        },
+        "seniorRaterId": {
+          "type": "string",
+          "description": "The document ID of the senior rater."
+        },
+        "seniorRaterEffectiveDate": {
+          "type": "string",
+          "description": "Effective date of the senior rater (YYYY-MM-DD)."
+        },
+        "reviewerId": {
+          "type": "string",
+          "description": "The document ID of the reviewer."
+        },
+        "reviewerEffectiveDate": {
+          "type": "string",
+          "description": "Effective date of the reviewer (YYYY-MM-DD)."
+        },
+        "submissionType": {
+          "type": "string",
+          "description": "Submission Type (e.g., ANN, COR, CTR, EXANN)."
+        },
+        "role": {
+          "type": "string",
+          "description": "Principal Duty Title / Role in the organization."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version profile draft (e.g., current, future, alternate)."
+        },
+        "updatedAt": {
+          "type": "object",
+          "description": "Firestore server timestamp representing the last update time."
+        }
+      },
+      "required": ["id", "schemeId", "userId", "element", "rank", "name", "role"]
+    }
+  },
+  "firestore": {
+    "/schemes/{schemeId}": {
+      "schema": "RatingScheme",
+      "description": "Collection of rating schemes created by users."
+    },
+    "/records/{recordId}": {
+      "schema": "ArmyRatingRecord",
+      "description": "Collection of individual rating records within rating schemes."
+    }
+  }
+}
