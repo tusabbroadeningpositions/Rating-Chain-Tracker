@@ -23,6 +23,24 @@ interface RatingTableProps {
   activeSchemeName?: string;
 }
 
+const getSubmissionBadgeStyles = (subType: string) => {
+  const type = (subType || "ANN").trim().toUpperCase();
+  switch (type) {
+    case "ANN":
+      return "bg-blue-50 border-blue-200 text-blue-700";
+    case "COR":
+      return "bg-amber-50 border-amber-200 text-amber-700";
+    case "CTR":
+      return "bg-emerald-50 border-emerald-200 text-emerald-700";
+    case "EXANN":
+      return "bg-purple-50 border-purple-200 text-purple-700";
+    case "SR OP":
+      return "bg-teal-50 border-teal-200 text-teal-700";
+    default:
+      return "bg-slate-50 border-slate-200 text-slate-700";
+  }
+};
+
 export default function RatingTable({
   records,
   onEdit,
@@ -836,7 +854,7 @@ export default function RatingTable({
                       </td>
                       {/* Submission Type */}
                       <td className="px-3 py-2 text-slate-700 border-r border-slate-100 text-center">
-                        <span className="inline-block px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 font-bold font-mono text-[10px] rounded uppercase">
+                        <span className={`inline-block px-2 py-0.5 border font-bold font-mono text-[10px] rounded uppercase ${getSubmissionBadgeStyles(r.submissionType || "ANN")}`}>
                           {r.submissionType || "ANN"}
                         </span>
                       </td>
