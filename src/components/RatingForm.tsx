@@ -56,6 +56,7 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
   const [dutyMosc, setDutyMosc] = useState("42S3O");
   const [element, setElement] = useState("Ceremonial");
   const [role, setRole] = useState<RatingRole | string>(RatingRole.MUSICIAN);
+  const [keyLeaderTitle, setKeyLeaderTitle] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [thruDate, setThruDate] = useState("");
   const [dueHqdaDate, setDueHqdaDate] = useState("");
@@ -75,6 +76,7 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       setDutyMosc(editingRecord.dutyMosc);
       setElement(editingRecord.element);
       setRole(editingRecord.role);
+      setKeyLeaderTitle(editingRecord.keyLeaderTitle || "");
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
       setDueHqdaDate(editingRecord.dueHqda);
@@ -104,6 +106,7 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       setDutyMosc("42S3O");
       setElement("Ceremonial");
       setRole(RatingRole.MUSICIAN);
+      setKeyLeaderTitle("");
       
       // Default to 1-year dates or relevant dates
       const today = new Date();
@@ -142,7 +145,8 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       reviewerId,
       reviewerEffectiveDate,
       submissionType,
-      role
+      role,
+      keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : ""
     };
 
     onSave(savedRecord);
@@ -340,6 +344,21 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
               />
             )}
           </div>
+          {role === RatingRole.KEY_LEADER && (
+            <div className="mt-2 space-y-1">
+              <label className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">
+                Key Leader Custom Title (will appear on bubble)
+              </label>
+              <input
+                id="input-key-leader-title"
+                type="text"
+                placeholder="e.g. First Sergeant, Drum Major"
+                value={keyLeaderTitle}
+                onChange={(e) => setKeyLeaderTitle(e.target.value)}
+                className="w-full px-3 py-1.5 border border-purple-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 font-semibold bg-purple-50/20"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -397,17 +416,38 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-medium text-slate-500 uppercase">Submission Type</label>
-            <select
-              id="select-submission-type"
-              value={submissionType}
-              onChange={(e) => setSubmissionType(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
-            >
-              <option value="ANN">ANN (Annual)</option>
-              <option value="COR">COR (Change of Rater)</option>
-              <option value="CTR">CTR (Complete the Record)</option>
-              <option value="EXANN">EXANN (Extended Annual)</option>
-            </select>
+            <div className="flex flex-col gap-1.5">
+              <select
+                id="select-submission-type"
+                value={["ANN", "COR", "CTR", "EXANN", "SR OP"].includes(submissionType) ? submissionType : "custom"}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "custom") {
+                    setSubmissionType("");
+                  } else {
+                    setSubmissionType(val);
+                  }
+                }}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
+              >
+                <option value="ANN">ANN (Annual)</option>
+                <option value="COR">COR (Change of Rater)</option>
+                <option value="CTR">CTR (Complete the Record)</option>
+                <option value="EXANN">EXANN (Extended Annual)</option>
+                <option value="SR OP">SR OP (Senior Rater Option)</option>
+                <option value="custom">Other / Custom</option>
+              </select>
+              {(!["ANN", "COR", "CTR", "EXANN", "SR OP"].includes(submissionType) || submissionType === "") && (
+                <input
+                  id="input-custom-submission-type"
+                  type="text"
+                  placeholder="Type Code"
+                  value={submissionType}
+                  onChange={(e) => setSubmissionType(e.target.value.toUpperCase())}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-bold uppercase"
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>

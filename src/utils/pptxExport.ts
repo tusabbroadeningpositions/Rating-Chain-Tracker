@@ -167,7 +167,7 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   if (organized.oic) {
     const oic = organized.oic;
     const colors = getRoleColors(oic.role);
-    const dateToUse = formattedChartDate || formatArmyDate(oic.thru);
+    const dateToUse = formatArmyDate(oic.thru);
     const label = `${oic.rank} ${oic.name}\n${dateToUse}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
@@ -197,7 +197,7 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   if (organized.elementLeader) {
     const leader = organized.elementLeader;
     const colors = getRoleColors(leader.role);
-    const dateToUse = formattedChartDate || formatArmyDate(leader.thru);
+    const dateToUse = formatArmyDate(leader.thru);
     const label = `${leader.rank} ${leader.name}\n${dateToUse}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
@@ -240,7 +240,7 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     // Helper to draw a single column
     const drawColumn = (col: any, xCol: number, wCol: number) => {
       const headerColors = getRoleColors(col.header.role);
-      const dateToUse = formattedChartDate || formatArmyDate(col.header.thru);
+      const dateToUse = formatArmyDate(col.header.thru);
       const headerLabel = `${col.header.rank} ${col.header.name}\n${dateToUse}`;
 
       slide.addShape(pptx.ShapeType.roundRect, {
@@ -274,7 +274,7 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
           const xLane = xCol + lIndex * (laneSpace + laneGap);
           const leader = lane.laneLeader;
           const leaderColors = getRoleColors(leader.role);
-          const leaderDate = formattedChartDate || formatArmyDate(leader.thru);
+          const leaderDate = formatArmyDate(leader.thru);
           const leaderLabel = `${leader.rank} ${leader.name}\n${leaderDate}`;
 
           const xLeader = xLane + (laneSpace - wCard) / 2;
@@ -320,7 +320,7 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
               const xSub = xSubsStart + sIndex * (wCard + cardSubGap);
               const ySub = yVerticalStackStart + cardHeight + cardRowGap;
               const subColors = getRoleColors(sub.role);
-              const subDate = formattedChartDate || formatArmyDate(sub.thru);
+              const subDate = formatArmyDate(sub.thru);
               const subLabel = `${sub.rank} ${sub.name}\n${subDate}`;
 
               slide.addShape(pptx.ShapeType.roundRect, {
@@ -377,8 +377,9 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       const wGroup = weightUnitWidth * groupWeights[gIndex];
       const xGroup = currentX;
       const leaderColors = getRoleColors(group.leader.role);
-      const leaderDate = formattedChartDate || formatArmyDate(group.leader.thru);
-      const leaderLabel = `${group.leader.rank} ${group.leader.name}\n${leaderDate}`;
+      const leaderDate = formatArmyDate(group.leader.thru);
+      const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? `\n(${group.leader.keyLeaderTitle.toUpperCase()})` : "";
+      const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}\n${leaderDate}`;
 
       // Draw Group Leader Box
       slide.addShape(pptx.ShapeType.roundRect, {
@@ -441,10 +442,12 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     { name: "Section Leader", role: RatingRole.SECTION_LEADER },
     { name: "Master Musician", role: RatingRole.MASTER_MUSICIAN },
     { name: "Senior Musician", role: RatingRole.SENIOR_MUSICIAN },
-    { name: "Musician", role: RatingRole.MUSICIAN }
+    { name: "Senior Support", role: RatingRole.SENIOR_SUPPORT_MUSICIAN },
+    { name: "Musician", role: RatingRole.MUSICIAN },
+    { name: "Support", role: RatingRole.SUPPORT_MUSICIAN }
   ];
 
-  const legendItemW = 1.45;
+  const legendItemW = 1.15;
   const legendGap = 0.08;
   const totalLegendW = (legendRoles.length * legendItemW) + ((legendRoles.length - 1) * legendGap);
   const legendStartX = (slideWidth - totalLegendW) / 2;

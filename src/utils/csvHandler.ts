@@ -14,11 +14,11 @@ export function inferRoleFromRankAndTitle(rank: string, title: string, dutyMosc?
   const t = title.toLowerCase().trim();
 
   // If dutyMosc is provided, use the new explicit mapping
-  if (m === "42S3O") {
-    return RatingRole.MUSICIAN;
+  if (t.includes("senior support musician") || m === "42S4O") {
+    return RatingRole.SENIOR_SUPPORT_MUSICIAN;
   }
-  if (m === "42S4O") {
-    return RatingRole.SENIOR_MUSICIAN;
+  if (t.includes("support musician") || m === "42S3O") {
+    return RatingRole.SUPPORT_MUSICIAN;
   }
   if (m === "42S5O") {
     // Master Musician or Section Leader
@@ -338,9 +338,7 @@ export function parseCSV(csvText: string): ArmyRatingRecord[] {
     const thruVal = getValue(idxThru);
     const dueHqdaVal = getValue(idxDueHqda);
     const subTypeVal = getValue(idxSubmissionType, "ANN") || "ANN";
-    const submissionType = ["ANN", "COR", "CTR", "EXANN"].includes(subTypeVal.toUpperCase().trim()) 
-      ? subTypeVal.toUpperCase().trim() 
-      : "ANN";
+    const submissionType = subTypeVal.trim().toUpperCase() || "ANN";
 
     rawRows.push({
       id: `imported_${i}_${Date.now()}`,

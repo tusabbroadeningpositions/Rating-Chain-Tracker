@@ -455,6 +455,11 @@ export default function OrgChartPreview({ records, onEditClick, readOnly = false
                               }`}
                             >
                               <div className="text-xs font-bold uppercase tracking-wider">{leader.rank} {leader.name}</div>
+                              {leader.role === RatingRole.KEY_LEADER && (
+                                <div className="text-[9px] font-black text-purple-900 uppercase tracking-widest mt-0.5 px-1.5 py-0.5 bg-purple-100/50 rounded inline-block">
+                                  {leader.keyLeaderTitle || "Key Leader"}
+                                </div>
+                              )}
                               <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(leader)}</div>
                             </div>
 
@@ -593,7 +598,9 @@ export default function OrgChartPreview({ records, onEditClick, readOnly = false
                     { name: "Section Leader", role: RatingRole.SECTION_LEADER },
                     { name: "Master Musician", role: RatingRole.MASTER_MUSICIAN },
                     { name: "Senior Musician", role: RatingRole.SENIOR_MUSICIAN },
-                    { name: "Musician", role: RatingRole.MUSICIAN }
+                    { name: "Senior Support Musician", role: RatingRole.SENIOR_SUPPORT_MUSICIAN },
+                    { name: "Musician", role: RatingRole.MUSICIAN },
+                    { name: "Support Musician", role: RatingRole.SUPPORT_MUSICIAN }
                   ].map((legendItem) => {
                     const colors = getRoleColors(legendItem.role);
                     return (
@@ -632,7 +639,7 @@ export default function OrgChartPreview({ records, onEditClick, readOnly = false
                   <div>
                     <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Active Soldier</span>
                     <h3 className="text-sm font-bold text-slate-800 mt-0.5">{selectedNode.name}</h3>
-                    <p className="text-xs text-slate-500 font-medium">{selectedNode.rank} • {selectedNode.role} ({selectedNode.dutyMosc})</p>
+                    <p className="text-xs text-slate-500 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
                   </div>
                   <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
                     {selectedNode.rank}
@@ -646,7 +653,7 @@ export default function OrgChartPreview({ records, onEditClick, readOnly = false
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500">Principal Duty Title:</span>
-                    <span className="font-semibold text-slate-700">{selectedNode.role}</span>
+                    <span className="font-semibold text-slate-700">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500">Rating Period:</span>

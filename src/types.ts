@@ -11,7 +11,9 @@ export enum RatingRole {
   SECTION_LEADER = "Section Leader",
   MASTER_MUSICIAN = "Master Musician",
   SENIOR_MUSICIAN = "Senior Musician",
-  MUSICIAN = "Musician"
+  SENIOR_SUPPORT_MUSICIAN = "Senior Support Musician",
+  MUSICIAN = "Musician",
+  SUPPORT_MUSICIAN = "Support Musician"
 }
 
 
@@ -42,6 +44,7 @@ export interface ArmyRatingRecord {
   reviewerEffectiveDate?: string; // Effective Date of Reviewer (YYYY-MM-DD)
   submissionType?: string; // Submission Type (ANN, COR, CTR, EXANN)
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
+  keyLeaderTitle?: string; // Custom title for key leader positions
   version?: "current" | "future" | "alternate"; // Version profile draft
 }
 

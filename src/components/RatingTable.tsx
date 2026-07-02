@@ -58,8 +58,12 @@ export default function RatingTable({
     "Master Musicians": 6,
     "Senior Musician": 7,
     "Senior Musicians": 7,
+    "Senior Support Musician": 7,
+    "Senior Support Musicians": 7,
     "Musician": 8,
     "Musicians": 8,
+    "Support Musician": 8,
+    "Support Musicians": 8,
   };
 
   // Filter and Sort records
@@ -773,7 +777,7 @@ export default function RatingTable({
                       </td>
                       <td className="px-3 py-2 border-r border-slate-100">
                         <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
-                          {r.role}
+                          {r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role}
                         </span>
                       </td>
                       {/* Dates */}

@@ -101,7 +101,9 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
         [RatingRole.SECTION_LEADER]: 4,
         [RatingRole.MASTER_MUSICIAN]: 5,
         [RatingRole.SENIOR_MUSICIAN]: 6,
+        [RatingRole.SENIOR_SUPPORT_MUSICIAN]: 6,
         [RatingRole.MUSICIAN]: 7,
+        [RatingRole.SUPPORT_MUSICIAN]: 7,
       };
 
       const verticalStack = descendants
@@ -145,7 +147,9 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
         [RatingRole.SECTION_LEADER]: 1,
         [RatingRole.MASTER_MUSICIAN]: 2,
         [RatingRole.SENIOR_MUSICIAN]: 3,
+        [RatingRole.SENIOR_SUPPORT_MUSICIAN]: 3,
         [RatingRole.MUSICIAN]: 4,
+        [RatingRole.SUPPORT_MUSICIAN]: 4,
       };
       const aVal = roleOrder[a.header.role] || 9;
       const bVal = roleOrder[b.header.role] || 9;
@@ -295,6 +299,7 @@ export function getRoleColors(role: RatingRole | string): {
         hexText: "000000",
         hexBorder: "000000"
       };
+    case RatingRole.SENIOR_SUPPORT_MUSICIAN:
     case RatingRole.SENIOR_MUSICIAN:
       return {
         bg: "bg-[#a6a6a6]", // Exact PowerPoint grey
@@ -304,6 +309,7 @@ export function getRoleColors(role: RatingRole | string): {
         hexText: "000000",
         hexBorder: "000000"
       };
+    case RatingRole.SUPPORT_MUSICIAN:
     case RatingRole.MUSICIAN:
     default:
       return {
