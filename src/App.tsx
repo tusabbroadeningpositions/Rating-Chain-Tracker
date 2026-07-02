@@ -715,9 +715,12 @@ export default function App() {
               activeTab === "chart" ? "sticky top-0 z-30 shadow-md" : ""
             }`}>
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center flex-wrap gap-1.5">
                   <Layers className="w-3.5 h-3.5 text-slate-400" />
-                  Roster Version:
+                  <span>Roster Version:</span>
+                  <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black tracking-wide px-2 py-0.5 rounded uppercase">
+                    {currentScheme?.name || "Blues Rating Scheme"}
+                  </span>
                 </span>
                 
                 <div className="inline-flex rounded-md bg-slate-100 p-1 font-medium border border-slate-200">
@@ -852,6 +855,7 @@ export default function App() {
                   readOnly={!canEdit}
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
+                  activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
                 />
               ) : (
                 <OrgChartPreview

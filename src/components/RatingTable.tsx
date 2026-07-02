@@ -20,6 +20,7 @@ interface RatingTableProps {
   readOnly?: boolean;
   selectedVersion?: "current" | "future" | "alternate";
   onChangeVersion?: (version: "current" | "future" | "alternate") => void;
+  activeSchemeName?: string;
 }
 
 export default function RatingTable({
@@ -32,6 +33,7 @@ export default function RatingTable({
   readOnly = false,
   selectedVersion = "current",
   onChangeVersion,
+  activeSchemeName = "Blues Rating Scheme",
 }: RatingTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
@@ -674,7 +676,12 @@ export default function RatingTable({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 animate-pulse" />
-                      <span className="text-[10px] tracking-wider text-slate-300">ROSTER VIEW:</span>
+                      <span className="text-[10px] tracking-wider text-slate-300 flex items-center gap-1">
+                        ROSTER VIEW:
+                        <span className="text-amber-400 font-extrabold uppercase px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[9px]">
+                          {activeSchemeName}
+                        </span>
+                      </span>
                       <div className="inline-flex rounded bg-slate-800 p-0.5 border border-slate-700">
                         <button
                           type="button"
