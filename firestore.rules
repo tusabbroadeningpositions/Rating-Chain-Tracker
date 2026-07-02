@@ -18,7 +18,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -45,26 +45,27 @@ service cloud.firestore {
 
     function isValidArmyRatingRecord(data) {
       return data.keys().hasAll(['id', 'schemeId', 'userId', 'element', 'rank', 'name', 'role']) &&
-             data.keys().size() <= 21 &&
+             data.keys().size() <= 30 &&
              data.id is string && data.id.size() <= 128 &&
              data.schemeId is string && data.schemeId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
-             data.element is string && data.element.size() <= 100 &&
-             data.rank is string && data.rank.size() <= 50 &&
-             data.name is string && data.name.size() <= 150 &&
-             data.role is string && data.role.size() <= 150 &&
-             (!data.keys().hasAny(['dutyMosc']) || (data.dutyMosc is string && data.dutyMosc.size() <= 50)) &&
-             (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 20)) &&
-             (!data.keys().hasAny(['thru']) || (data.thru is string && data.thru.size() <= 20)) &&
-             (!data.keys().hasAny(['dueHqda']) || (data.dueHqda is string && data.dueHqda.size() <= 20)) &&
-             (!data.keys().hasAny(['raterId']) || (data.raterId is string && data.raterId.size() <= 128)) &&
-             (!data.keys().hasAny(['raterEffectiveDate']) || (data.raterEffectiveDate is string && data.raterEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['seniorRaterId']) || (data.seniorRaterId is string && data.seniorRaterId.size() <= 128)) &&
-             (!data.keys().hasAny(['seniorRaterEffectiveDate']) || (data.seniorRaterEffectiveDate is string && data.seniorRaterEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['reviewerId']) || (data.reviewerId is string && data.reviewerId.size() <= 128)) &&
-             (!data.keys().hasAny(['reviewerEffectiveDate']) || (data.reviewerEffectiveDate is string && data.reviewerEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['submissionType']) || (data.submissionType is string && data.submissionType.size() <= 50)) &&
-             (!data.keys().hasAny(['version']) || (data.version is string && data.version.size() <= 50)) &&
+             data.element is string && data.element.size() <= 300 &&
+             data.rank is string && data.rank.size() <= 200 &&
+             data.name is string && data.name.size() <= 400 &&
+             data.role is string && data.role.size() <= 400 &&
+             (!data.keys().hasAny(['dutyMosc']) || data.dutyMosc == null || (data.dutyMosc is string && data.dutyMosc.size() <= 200)) &&
+             (!data.keys().hasAny(['from']) || data.from == null || (data.from is string && data.from.size() <= 100)) &&
+             (!data.keys().hasAny(['thru']) || data.thru == null || (data.thru is string && data.thru.size() <= 100)) &&
+             (!data.keys().hasAny(['dueHqda']) || data.dueHqda == null || (data.dueHqda is string && data.dueHqda.size() <= 100)) &&
+             (!data.keys().hasAny(['raterId']) || data.raterId == null || (data.raterId is string && data.raterId.size() <= 128)) &&
+             (!data.keys().hasAny(['raterEffectiveDate']) || data.raterEffectiveDate == null || (data.raterEffectiveDate is string && data.raterEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['seniorRaterId']) || data.seniorRaterId == null || (data.seniorRaterId is string && data.seniorRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['seniorRaterEffectiveDate']) || data.seniorRaterEffectiveDate == null || (data.seniorRaterEffectiveDate is string && data.seniorRaterEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['reviewerId']) || data.reviewerId == null || (data.reviewerId is string && data.reviewerId.size() <= 128)) &&
+             (!data.keys().hasAny(['reviewerEffectiveDate']) || data.reviewerEffectiveDate == null || (data.reviewerEffectiveDate is string && data.reviewerEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['submissionType']) || data.submissionType == null || (data.submissionType is string && data.submissionType.size() <= 200)) &&
+             (!data.keys().hasAny(['version']) || data.version == null || (data.version is string && data.version.size() <= 100)) &&
+             (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
@@ -139,7 +140,7 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly([
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
-                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 'updatedAt'
+                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 'keyLeaderTitle', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
                     );
                     

@@ -16,6 +16,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true,
 }, "ai-studio-remixarmyratings-2cdb4e6c-5680-4fae-83e5-b881652f2147");
 
 // Connection test

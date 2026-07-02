@@ -194,7 +194,8 @@ export default function App() {
     const unsubscribe = subscribeToSchemes(user.uid, async (fetchedSchemes) => {
       setSchemes(fetchedSchemes);
       if (fetchedSchemes.length > 0) {
-        if (!activeSchemeId) {
+        const schemeExists = fetchedSchemes.some(s => s.id === activeSchemeId);
+        if (!activeSchemeId || !schemeExists) {
           setActiveSchemeId(fetchedSchemes[0].id);
         }
         setIsLoading(false);
