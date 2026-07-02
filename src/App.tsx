@@ -850,6 +850,7 @@ export default function App() {
               {activeTab === "table" ? (
                 <RatingTable
                   records={filteredRecords}
+                  allRecords={records}
                   onEdit={handleEditClick}
                   onDelete={handleDeleteRecord}
                   onAddClick={handleAddClick}

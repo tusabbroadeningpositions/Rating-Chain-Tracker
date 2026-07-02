@@ -12,6 +12,7 @@ import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, F
 
 interface RatingTableProps {
   records: ArmyRatingRecord[];
+  allRecords?: ArmyRatingRecord[];
   onEdit: (record: ArmyRatingRecord) => void;
   onDelete: (id: string) => void;
   onAddClick: () => void;
@@ -43,6 +44,7 @@ const getSubmissionBadgeStyles = (subType: string) => {
 
 export default function RatingTable({
   records,
+  allRecords,
   onEdit,
   onDelete,
   onAddClick,
@@ -113,6 +115,9 @@ export default function RatingTable({
       // Fallback to alphabetical if roles are same priority
       return a.name.localeCompare(b.name);
     });
+
+  // Find current version list for cell difference comparisons
+  const currentRecords = (allRecords || []).filter(rec => (rec.version || "current") === "current");
 
   // Handle CSV Download
   const handleDownloadTemplate = () => {
@@ -525,6 +530,20 @@ export default function RatingTable({
     return reviewerId;
   };
 
+  const getRaterNameInVersion = (raterId: string, versionRecords: ArmyRatingRecord[]) => {
+    if (!raterId) return "-";
+    const found = versionRecords.find(rec => rec.id === raterId);
+    if (found) return `${found.rank} ${found.name}`;
+    return raterId;
+  };
+
+  const getReviewerNameInVersion = (reviewerId: string, versionRecords: ArmyRatingRecord[]) => {
+    if (!reviewerId) return "N/A";
+    const found = versionRecords.find(rec => rec.id === reviewerId);
+    if (found) return `${found.rank} ${found.name}`;
+    return reviewerId;
+  };
+
   const getThruDateClass = (dateStr: string) => {
     if (!dateStr) return "";
     try {
@@ -786,6 +805,39 @@ export default function RatingTable({
                 filteredRecords.map((r, idx) => {
                   const colors = getRoleColors(r.role);
                   const isEven = idx % 2 === 1;
+
+                  // Comparison for versions (Future/Alternate vs Current)
+                  const isCurrent = selectedVersion === "current";
+                  const currentSoldier = isCurrent ? null : currentRecords.find(cr => cr.name.trim().toLowerCase() === r.name.trim().toLowerCase());
+                  
+                  const isRankDiff = !isCurrent && !!currentSoldier && r.rank !== currentSoldier.rank;
+                  const isElementDiff = !isCurrent && !!currentSoldier && r.element !== currentSoldier.element;
+                  const isMoscDiff = !isCurrent && !!currentSoldier && r.dutyMosc !== currentSoldier.dutyMosc;
+                  const isRoleDiff = !isCurrent && !!currentSoldier && (
+                    r.role !== currentSoldier.role || 
+                    (r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle !== currentSoldier.keyLeaderTitle)
+                  );
+                  const isDatesDiff = !isCurrent && !!currentSoldier && (
+                    r.from !== currentSoldier.from || 
+                    r.thru !== currentSoldier.thru || 
+                    r.dueHqda !== currentSoldier.dueHqda
+                  );
+                  const isRaterDiff = !isCurrent && !!currentSoldier && (
+                    getRaterNameInVersion(r.raterId, records) !== getRaterNameInVersion(currentSoldier.raterId, currentRecords) ||
+                    (r.raterEffectiveDate || "") !== (currentSoldier.raterEffectiveDate || "")
+                  );
+                  const isSeniorRaterDiff = !isCurrent && !!currentSoldier && (
+                    getRaterNameInVersion(r.seniorRaterId, records) !== getRaterNameInVersion(currentSoldier.seniorRaterId, currentRecords) ||
+                    (r.seniorRaterEffectiveDate || "") !== (currentSoldier.seniorRaterEffectiveDate || "")
+                  );
+                  const isReviewerDiff = !isCurrent && !!currentSoldier && (
+                    getReviewerNameInVersion(r.reviewerId, records) !== getReviewerNameInVersion(currentSoldier.reviewerId, currentRecords) ||
+                    (r.reviewerEffectiveDate || "") !== (currentSoldier.reviewerEffectiveDate || "")
+                  );
+                  const isSubmissionDiff = !isCurrent && !!currentSoldier && (
+                    (r.submissionType || "ANN") !== (currentSoldier.submissionType || "ANN")
+                  );
+
                   return (
                     <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${getThruDateClass(r.thru) || (isEven ? "bg-slate-50/50" : "bg-white")}`}>
                       {/* Name */}
@@ -793,28 +845,29 @@ export default function RatingTable({
                         {r.name}
                       </td>
                       {/* Rank */}
-                      <td className="px-3 py-2 border-r border-slate-100 text-center">
+                      <td className={`px-3 py-2 border-r border-slate-100 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
                           {r.rank}
                         </span>
                       </td>
                       {/* Element */}
-                      <td className="px-3 py-2 text-slate-600 font-medium border-r border-slate-100">
+                      <td className={`px-3 py-2 text-slate-600 font-medium border-r border-slate-100 ${isElementDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         {r.element}
                       </td>
                       {/* MOSC */}
-                      <td className="px-3 py-2 border-r border-slate-100 text-center">
+                      <td className={`px-3 py-2 border-r border-slate-100 text-center ${isMoscDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 font-mono text-[10px] font-bold rounded">
                           {r.dutyMosc}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-r border-slate-100">
+                      {/* Principal Duty Title */}
+                      <td className={`px-3 py-2 border-r border-slate-100 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
                           {r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role}
                         </span>
                       </td>
                       {/* Dates */}
-                      <td className="px-3 py-2 border-r border-slate-100">
+                      <td className={`px-3 py-2 border-r border-slate-100 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <div className="font-medium font-mono text-slate-600 flex flex-wrap gap-1 items-center">
                           <span>{r.from} to</span>
                           <span className="px-1 rounded border border-transparent">
@@ -826,7 +879,7 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rater */}
-                      <td className="px-3 py-2 text-slate-700 border-r border-slate-100">
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <div className="font-semibold text-slate-800">{getRaterName(r.raterId)}</div>
                         {r.raterId && r.raterEffectiveDate && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -835,7 +888,7 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Senior Rater */}
-                      <td className="px-3 py-2 text-slate-700 border-r border-slate-100">
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isSeniorRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <div className="font-semibold text-slate-800">{getRaterName(r.seniorRaterId)}</div>
                         {r.seniorRaterId && r.seniorRaterEffectiveDate && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -844,7 +897,7 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Reviewer */}
-                      <td className="px-3 py-2 text-slate-700 border-r border-slate-100">
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isReviewerDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <div className="font-semibold text-slate-800">{getReviewerName(r.reviewerId)}</div>
                         {r.reviewerId && r.reviewerEffectiveDate && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -853,7 +906,7 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Submission Type */}
-                      <td className="px-3 py-2 text-slate-700 border-r border-slate-100 text-center">
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 text-center ${isSubmissionDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
                         <span className={`inline-block px-2 py-0.5 border font-bold font-mono text-[10px] rounded uppercase ${getSubmissionBadgeStyles(r.submissionType || "ANN")}`}>
                           {r.submissionType || "ANN"}
                         </span>
