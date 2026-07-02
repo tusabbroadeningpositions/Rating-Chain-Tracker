@@ -53,6 +53,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [sharedScheme, setSharedScheme] = useState<RatingScheme | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<"current" | "future" | "alternate">("current");
 
   // Safety fallback for loading state
   useEffect(() => {
@@ -220,6 +221,9 @@ export default function App() {
   useEffect(() => {
     if (!activeSchemeId) return;
     
+    // When switching rating scheme profile, default to current version
+    setSelectedVersion("current");
+    
     // Subscribe to records if we have a schemeId
     const unsubscribe = subscribeToRecords(
       activeSchemeId, 
@@ -245,8 +249,6 @@ export default function App() {
       localStorage.setItem(ACTIVE_SCHEME_KEY, activeSchemeId);
     }
   }, [activeSchemeId]);
-
-  const [selectedVersion, setSelectedVersion] = useState<"current" | "future" | "alternate">("current");
 
   const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
   const isOwner = currentScheme?.userId === user?.uid;
@@ -488,7 +490,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans text-slate-900 select-none">
       
       {/* Professional Polish Military Header */}
-      <header className="bg-[#1e293b] text-white p-4 shadow-lg z-10 border-b-2 border-slate-700 print:hidden">
+      <header className="bg-[#1e293b] text-white p-4 shadow-lg relative z-40 border-b-2 border-slate-700 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-4">
           
           <div className="flex items-center justify-between w-full lg:w-auto">
@@ -863,6 +865,7 @@ export default function App() {
                   records={filteredRecords}
                   onEditClick={handleEditClick}
                   readOnly={!canEdit}
+                  activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
                 />
               )}
 

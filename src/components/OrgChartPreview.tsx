@@ -14,9 +14,15 @@ interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
   onEditClick: (record: ArmyRatingRecord) => void;
   readOnly?: boolean;
+  activeSchemeName?: string;
 }
 
-export default function OrgChartPreview({ records, onEditClick, readOnly = false }: OrgChartPreviewProps) {
+export default function OrgChartPreview({ 
+  records, 
+  onEditClick, 
+  readOnly = false,
+  activeSchemeName = "Rating Scheme"
+}: OrgChartPreviewProps) {
   const [zoom, setZoom] = useState(0.95);
   const containerRef = useRef<HTMLDivElement>(null);
   const [displayDate, setDisplayDate] = useState<string>(() => {
@@ -121,7 +127,7 @@ export default function OrgChartPreview({ records, onEditClick, readOnly = false
 
   // PPTX Export trigger
   const handleExportPPTX = () => {
-    exportToPPTX(records, "Rating_Scheme_Org_Chart", displayDate);
+    exportToPPTX(records, activeSchemeName, displayDate);
   };
 
   // Browser Print trigger

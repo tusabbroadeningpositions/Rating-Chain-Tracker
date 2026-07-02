@@ -143,7 +143,22 @@ export default function RatingTable({
     // or simply provide the worksheet. Newlines are natively supported.
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Rating Scheme");
-    XLSX.writeFile(workbook, "Rating_Scheme_Tracker.xlsx");
+
+    // Format today's date as YYYY-MM-DD
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    // Clean up activeSchemeName to construct a safe and clean filename
+    const sanitizedSchemeName = activeSchemeName
+      .replace(/[^a-zA-Z0-9\s_-]/g, "")
+      .trim()
+      .replace(/\s+/g, "_");
+
+    const filename = `${sanitizedSchemeName}_${dateStr}.xlsx`;
+    XLSX.writeFile(workbook, filename);
   };
 
   // Process uploaded CSV file

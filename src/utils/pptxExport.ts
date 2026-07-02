@@ -481,6 +481,17 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
 
   // 4. Save/Export PPTX file
   // Using pptxgenjs write method to trigger a download in-browser
-  const filename = `${titleText.replace(/\s+/g, "_")}_Chart.pptx`;
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+
+  const sanitizedProfileName = titleText
+    .replace(/[^a-zA-Z0-9\s_-]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+
+  const filename = `${sanitizedProfileName}_${dateStr}_ORG_CHART.pptx`;
   pptx.writeFile({ fileName: filename });
 }
