@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useRef } from "react";
-import * as XLSX from "xlsx";
+// @ts-ignore
+import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole } from "../types";
 import { parseCSV, generateTemplateCSV } from "../utils/csvHandler";
 import { getRoleColors } from "../utils/orgChartLayout";
@@ -134,7 +135,58 @@ export default function RatingTable({
 
   // Handle Excel Export
   const handleExportExcel = () => {
-    const data = records.map(r => {
+    const formatToYYYYMMDD = (dateStr: string | undefined): string => {
+      if (!dateStr) return "";
+      const clean = dateStr.trim();
+      if (!clean) return "";
+      const replaced = clean.replace(/[\/\-]/g, "");
+      if (/^\d{8}$/.test(replaced)) {
+        return replaced;
+      }
+      const m = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) {
+        const mm = m[1].padStart(2, "0");
+        const dd = m[2].padStart(2, "0");
+        const yyyy = m[3];
+        return `${yyyy}${mm}${dd}`;
+      }
+      const m2 = clean.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (m2) {
+        const yyyy = m2[1];
+        const mm = m2[2].padStart(2, "0");
+        const dd = m2[3].padStart(2, "0");
+        return `${yyyy}${mm}${dd}`;
+      }
+      const parsed = Date.parse(clean);
+      if (!isNaN(parsed)) {
+        const d = new Date(parsed);
+        const yyyy = d.getFullYear().toString();
+        const mm = (d.getMonth() + 1).toString().padStart(2, "0");
+        const dd = d.getDate().toString().padStart(2, "0");
+        return `${yyyy}${mm}${dd}`;
+      }
+      return clean;
+    };
+
+    // Sort records in the exact same order as display
+    const sortedExportRecords = [...records].sort((a, b) => {
+      if (sortAlphabetically) {
+        return a.name.localeCompare(b.name);
+      }
+
+      // Hierarchy Sort
+      const priorityA = ROLE_PRIORITY[a.role] || 99;
+      const priorityB = ROLE_PRIORITY[b.role] || 99;
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      // Fallback to alphabetical if roles are same priority
+      return a.name.localeCompare(b.name);
+    });
+
+    const data = sortedExportRecords.map(r => {
       const helperGetName = (id: string) => {
         if (!id) return "";
         const rec = records.find(x => x.id === id);
@@ -143,27 +195,150 @@ export default function RatingTable({
 
       return {
         "Element": r.element,
-        "Principal\nDuty Title": r.role,
+        "Principal\nDuty Title": r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role,
         "Duty MOSC": r.dutyMosc,
         "Rank": r.rank,
         "Name": r.name,
-        "From": r.from,
-        "Thru": r.thru,
-        "Due to\nHQDA": r.dueHqda,
+        "From": formatToYYYYMMDD(r.from),
+        "Thru": formatToYYYYMMDD(r.thru),
+        "Due to\nHQDA": formatToYYYYMMDD(r.dueHqda),
         "Rater": helperGetName(r.raterId),
-        "Rater\nEffective Date": r.raterEffectiveDate || "",
+        "Rater\nEffective Date": formatToYYYYMMDD(r.raterEffectiveDate),
         "Senior Rater": helperGetName(r.seniorRaterId),
-        "Senior Rater\nEffective Date": r.seniorRaterEffectiveDate || "",
+        "Senior Rater\nEffective Date": formatToYYYYMMDD(r.seniorRaterEffectiveDate),
         "Reviewer": helperGetName(r.reviewerId),
-        "Reviewer\nEffective Date": r.reviewerEffectiveDate || "",
+        "Reviewer\nEffective Date": formatToYYYYMMDD(r.reviewerEffectiveDate),
         "Submission\nType": r.submissionType || "ANN"
       };
     });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
-    
-    // Enable wrap text and styling if Excel properties support it, 
-    // or simply provide the worksheet. Newlines are natively supported.
+
+    // Apply column widths to make sure text is fully readable
+    worksheet["!cols"] = [
+      { wch: 15 }, // Element
+      { wch: 25 }, // Principal Duty Title
+      { wch: 12 }, // Duty MOSC
+      { wch: 8 },  // Rank
+      { wch: 20 }, // Name
+      { wch: 12 }, // From
+      { wch: 12 }, // Thru
+      { wch: 12 }, // Due to HQDA
+      { wch: 22 }, // Rater
+      { wch: 18 }, // Rater Effective Date
+      { wch: 22 }, // Senior Rater
+      { wch: 18 }, // Senior Rater Effective Date
+      { wch: 22 }, // Reviewer
+      { wch: 18 }, // Reviewer Effective Date
+      { wch: 15 }  // Submission Type
+    ];
+
+    // Format headers (A1 to O1) with a nice slate background and bold text
+    const headerCols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
+    headerCols.forEach(col => {
+      const cellRef = `${col}1`;
+      if (worksheet[cellRef]) {
+        worksheet[cellRef].s = {
+          font: { bold: true, color: { rgb: "1E293B" } }, // Slate-800
+          fill: { patternType: "solid", fgColor: { rgb: "F1F5F9" } }, // Slate-100
+          alignment: { wrapText: true, horizontal: "center", vertical: "center" }
+        };
+      }
+    });
+
+    // Apply cell yellow highlights if not "current" version, indicating difference from "current" version
+    const isCurrent = selectedVersion === "current";
+    if (!isCurrent) {
+      sortedExportRecords.forEach((r, idx) => {
+        const rowIdx = idx + 2; // Row 1 is header, data starts at row 2
+        
+        const currentSoldier = currentRecords.find(cr => cr.name.trim().toLowerCase() === r.name.trim().toLowerCase());
+        if (!currentSoldier) return; // If soldier is not in current version, don't highlight difference
+
+        // Highlight yellow style (thick/bright yellow background matches the "yellow outline" requirement beautifully in Excel)
+        const highlightStyle = {
+          fill: {
+            patternType: "solid",
+            fgColor: { rgb: "FFFF00" } // Bright yellow background
+          }
+        };
+
+        // Compare and highlight each field:
+        // A: Element
+        if (r.element !== currentSoldier.element) {
+          const cellRef = `A${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // B: Principal Duty Title
+        const roleA = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role;
+        const roleB = currentSoldier.role === RatingRole.KEY_LEADER && currentSoldier.keyLeaderTitle ? `${currentSoldier.role} (${currentSoldier.keyLeaderTitle})` : currentSoldier.role;
+        if (roleA !== roleB) {
+          const cellRef = `B${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // C: Duty MOSC
+        if (r.dutyMosc !== currentSoldier.dutyMosc) {
+          const cellRef = `C${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // D: Rank
+        if (r.rank !== currentSoldier.rank) {
+          const cellRef = `D${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // F: From
+        if (r.from !== currentSoldier.from) {
+          const cellRef = `F${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // G: Thru
+        if (r.thru !== currentSoldier.thru) {
+          const cellRef = `G${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // H: Due to HQDA
+        if (r.dueHqda !== currentSoldier.dueHqda) {
+          const cellRef = `H${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // I: Rater
+        if (getRaterNameInVersion(r.raterId, records) !== getRaterNameInVersion(currentSoldier.raterId, currentRecords)) {
+          const cellRef = `I${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // J: Rater Effective Date
+        if ((r.raterEffectiveDate || "") !== (currentSoldier.raterEffectiveDate || "")) {
+          const cellRef = `J${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // K: Senior Rater
+        if (getRaterNameInVersion(r.seniorRaterId, records) !== getRaterNameInVersion(currentSoldier.seniorRaterId, currentRecords)) {
+          const cellRef = `K${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // L: Senior Rater Effective Date
+        if ((r.seniorRaterEffectiveDate || "") !== (currentSoldier.seniorRaterEffectiveDate || "")) {
+          const cellRef = `L${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // M: Reviewer
+        if (getReviewerNameInVersion(r.reviewerId, records) !== getReviewerNameInVersion(currentSoldier.reviewerId, currentRecords)) {
+          const cellRef = `M${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // N: Reviewer Effective Date
+        if ((r.reviewerEffectiveDate || "") !== (currentSoldier.reviewerEffectiveDate || "")) {
+          const cellRef = `N${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+        // O: Submission Type
+        if ((r.submissionType || "ANN") !== (currentSoldier.submissionType || "ANN")) {
+          const cellRef = `O${rowIdx}`;
+          if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
+        }
+      });
+    }
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Rating Scheme");
 
