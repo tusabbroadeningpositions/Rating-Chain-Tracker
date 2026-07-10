@@ -29,7 +29,8 @@ import {
   duplicateScheme,
   createDefaultScheme,
   toggleSchemeEdit,
-  copyVersion
+  copyVersion,
+  updateSchemeDates
 } from "./lib/firebaseService";
 import { Share2, Link, Globe, Lock, CheckCircle2 } from "lucide-react";
 
@@ -414,6 +415,28 @@ export default function App() {
     await renameScheme(id, newName);
   };
 
+  const handleUpdateEffectiveAsOf = async (dateVal: string) => {
+    if (!activeSchemeId || !canEdit) return;
+    try {
+      await updateSchemeDates(activeSchemeId, { effectiveAsOf: dateVal });
+    } catch (error) {
+      console.error("Error updating effective as of date:", error);
+    }
+  };
+
+  const handleUpdateProposedEffectiveDate = async (version: "future" | "alternate", dateVal: string) => {
+    if (!activeSchemeId || !canEdit) return;
+    try {
+      if (version === "future") {
+        await updateSchemeDates(activeSchemeId, { proposedEffectiveDateFuture: dateVal });
+      } else {
+        await updateSchemeDates(activeSchemeId, { proposedEffectiveDateAlternate: dateVal });
+      }
+    } catch (error) {
+      console.error(`Error updating proposed effective date for ${version}:`, error);
+    }
+  };
+
   const handleDuplicateScheme = async (id: string) => {
     if (!user) return;
     const schemeToDuplicate = schemes.find(s => s.id === id);
@@ -724,6 +747,21 @@ export default function App() {
                   <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black tracking-wide px-2 py-0.5 rounded uppercase">
                     {currentScheme?.name || "Blues Rating Scheme"}
                   </span>
+                  {selectedVersion === "current" && (
+                    <span className="text-xs sm:text-sm font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md font-mono ml-2 uppercase">
+                      Effective: {currentScheme?.effectiveAsOf || "Not Set"}
+                    </span>
+                  )}
+                  {selectedVersion === "future" && (
+                    <span className="text-xs sm:text-sm font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md font-mono ml-2 uppercase">
+                      Proposed: {currentScheme?.proposedEffectiveDateFuture || "Not Set"}
+                    </span>
+                  )}
+                  {selectedVersion === "alternate" && (
+                    <span className="text-xs sm:text-sm font-black text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md font-mono ml-2 uppercase">
+                      Proposed: {currentScheme?.proposedEffectiveDateAlternate || "Not Set"}
+                    </span>
+                  )}
                 </span>
                 
                 <div className="inline-flex rounded-md bg-slate-100 p-1 font-medium border border-slate-200">
@@ -860,6 +898,20 @@ export default function App() {
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
                   activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
+                  proposedEffectiveDate={
+                    selectedVersion === "future"
+                      ? currentScheme?.proposedEffectiveDateFuture || ""
+                      : selectedVersion === "alternate"
+                        ? currentScheme?.proposedEffectiveDateAlternate || ""
+                        : ""
+                  }
+                  onUpdateProposedEffectiveDate={(dateVal) => {
+                    if (selectedVersion === "future" || selectedVersion === "alternate") {
+                      handleUpdateProposedEffectiveDate(selectedVersion, dateVal);
+                    }
+                  }}
+                  effectiveAsOf={currentScheme?.effectiveAsOf || ""}
+                  onUpdateEffectiveAsOf={handleUpdateEffectiveAsOf}
                 />
               ) : (
                 <OrgChartPreview

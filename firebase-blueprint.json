@@ -25,6 +25,18 @@
           "type": "boolean",
           "description": "Whether anyone can edit the records in this scheme if it is shared."
         },
+        "effectiveAsOf": {
+          "type": "string",
+          "description": "The date when the current version of the rating scheme is effective as of (YYYYMMDD or YYYY-MM-DD)."
+        },
+        "proposedEffectiveDateFuture": {
+          "type": "string",
+          "description": "Proposed effective date for the future version of the rating scheme."
+        },
+        "proposedEffectiveDateAlternate": {
+          "type": "string",
+          "description": "Proposed effective date for the alternate version of the rating scheme."
+        },
         "createdAt": {
           "type": "object",
           "description": "Firestore server timestamp representing the creation time."

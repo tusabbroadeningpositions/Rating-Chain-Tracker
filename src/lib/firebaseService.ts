@@ -150,6 +150,25 @@ export async function toggleSchemeEdit(schemeId: string, allowEdit: boolean): Pr
   }
 }
 
+export async function updateSchemeDates(
+  schemeId: string,
+  dates: {
+    effectiveAsOf?: string;
+    proposedEffectiveDateFuture?: string;
+    proposedEffectiveDateAlternate?: string;
+  }
+): Promise<void> {
+  const path = `${SCHEMES_COL}/${schemeId}`;
+  try {
+    await updateDoc(doc(db, SCHEMES_COL, schemeId), {
+      ...dates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
 export async function getScheme(schemeId: string): Promise<RatingScheme | null> {
   const path = `${SCHEMES_COL}/${schemeId}`;
   try {

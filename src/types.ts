@@ -25,6 +25,9 @@ export interface RatingScheme {
   updatedAt: number;
   isShared?: boolean;
   allowEdit?: boolean;
+  effectiveAsOf?: string;
+  proposedEffectiveDateFuture?: string;
+  proposedEffectiveDateAlternate?: string;
 }
 
 export interface ArmyRatingRecord {

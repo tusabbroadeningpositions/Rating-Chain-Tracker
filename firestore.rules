@@ -33,12 +33,15 @@ service cloud.firestore {
 
     function isValidRatingScheme(data) {
       return data.keys().hasAll(['id', 'name', 'userId']) &&
-             data.keys().size() <= 7 &&
+             data.keys().size() <= 15 &&
              data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
              data.userId is string && data.userId.size() <= 128 &&
              (!data.keys().hasAny(['isShared']) || data.isShared is bool) &&
              (!data.keys().hasAny(['allowEdit']) || data.allowEdit is bool) &&
+             (!data.keys().hasAny(['effectiveAsOf']) || data.effectiveAsOf is string && data.effectiveAsOf.size() <= 100) &&
+             (!data.keys().hasAny(['proposedEffectiveDateFuture']) || data.proposedEffectiveDateFuture is string && data.proposedEffectiveDateFuture.size() <= 100) &&
+             (!data.keys().hasAny(['proposedEffectiveDateAlternate']) || data.proposedEffectiveDateAlternate is string && data.proposedEffectiveDateAlternate.size() <= 100) &&
              (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp || data.createdAt == null) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
@@ -109,13 +112,15 @@ service cloud.firestore {
                     
       allow update: if isValidId(schemeId) &&
                     isValidRatingScheme(incoming()) &&
-                    isOwner(existing().userId) && (
+                    (isOwner(existing().userId) || (existing().isShared == true && existing().allowEdit == true)) && (
                       // Action: Rename
                       (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt']) && incoming().updatedAt == request.time) ||
                       // Action: Toggle Share
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['isShared', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['isShared', 'updatedAt']) && incoming().updatedAt == request.time) ||
                       // Action: Toggle Edit
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'updatedAt']) && incoming().updatedAt == request.time)
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Update Dates
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['effectiveAsOf', 'proposedEffectiveDateFuture', 'proposedEffectiveDateAlternate', 'updatedAt']) && incoming().updatedAt == request.time)
                     );
                     
       allow delete: if isValidId(schemeId) && isOwner(resource.data.userId);

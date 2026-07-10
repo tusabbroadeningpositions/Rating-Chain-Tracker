@@ -23,6 +23,10 @@ interface RatingTableProps {
   selectedVersion?: "current" | "future" | "alternate";
   onChangeVersion?: (version: "current" | "future" | "alternate") => void;
   activeSchemeName?: string;
+  proposedEffectiveDate?: string;
+  onUpdateProposedEffectiveDate?: (dateVal: string) => void;
+  effectiveAsOf?: string;
+  onUpdateEffectiveAsOf?: (dateVal: string) => void;
 }
 
 const getSubmissionBadgeStyles = (subType: string) => {
@@ -55,6 +59,10 @@ export default function RatingTable({
   selectedVersion = "current",
   onChangeVersion,
   activeSchemeName = "Blues Rating Scheme",
+  proposedEffectiveDate = "",
+  onUpdateProposedEffectiveDate,
+  effectiveAsOf = "",
+  onUpdateEffectiveAsOf,
 }: RatingTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
@@ -948,6 +956,34 @@ export default function RatingTable({
                           Alternate
                         </button>
                       </div>
+                      {selectedVersion === "current" && (
+                        <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
+                          <span className="text-[10px] text-slate-300 normal-case font-medium">
+                            Effective as of:
+                          </span>
+                          <input
+                            type="date"
+                            value={effectiveAsOf}
+                            disabled={readOnly}
+                            onChange={(e) => onUpdateEffectiveAsOf?.(e.target.value)}
+                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50"
+                          />
+                        </div>
+                      )}
+                      {(selectedVersion === "future" || selectedVersion === "alternate") && (
+                        <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
+                          <span className="text-[10px] text-slate-300 normal-case font-medium">
+                            Proposed Effective Date:
+                          </span>
+                          <input
+                            type="date"
+                            value={proposedEffectiveDate}
+                            disabled={readOnly}
+                            onChange={(e) => onUpdateProposedEffectiveDate?.(e.target.value)}
+                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50"
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-slate-300 font-mono font-medium">
                       <span>Total: <strong className="text-white font-bold">{filteredRecords.length}</strong> Soldiers</span>
