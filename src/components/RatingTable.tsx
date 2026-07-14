@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole } from "../types";
 import { parseCSV, generateTemplateCSV } from "../utils/csvHandler";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle } from "lucide-react";
 
 interface RatingTableProps {
   records: ArmyRatingRecord[];
@@ -66,12 +66,113 @@ export default function RatingTable({
 }: RatingTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
+  const [selectedRater, setSelectedRater] = useState("");
+  const [selectedSeniorRater, setSelectedSeniorRater] = useState("");
   const [sortAlphabetically, setSortAlphabetically] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [csvError, setCsvError] = useState("");
   const [importPending, setImportPending] = useState<ArmyRatingRecord[] | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasAnyFilter = !!(searchTerm || selectedRole || selectedRater || selectedSeniorRater);
+
+  const handleClearAllFilters = () => {
+    setSearchTerm("");
+    setSelectedRole("");
+    setSelectedRater("");
+    setSelectedSeniorRater("");
+  };
+
+  const getRaterName = (raterId: string) => {
+    if (!raterId) return "-";
+    const r = records.find(rec => rec.id === raterId);
+    if (r) {
+      if (r.rank) {
+        return `${r.name} (${r.rank})`;
+      }
+      return r.name;
+    }
+    // If not found by ID, it might be a raw name string from import
+    return raterId;
+  };
+
+  // Get unique Raters
+  const uniqueRaters = useMemo(() => {
+    const ratersSet = new Set<string>();
+    records.forEach(r => {
+      if (r.raterId) {
+        const name = getRaterName(r.raterId);
+        if (name && name !== "-") {
+          ratersSet.add(name);
+        }
+      }
+    });
+    return Array.from(ratersSet).sort();
+  }, [records]);
+
+  // Get unique Senior Raters
+  const uniqueSeniorRaters = useMemo(() => {
+    const seniorRatersSet = new Set<string>();
+    records.forEach(r => {
+      if (r.seniorRaterId) {
+        const name = getRaterName(r.seniorRaterId);
+        if (name && name !== "-") {
+          seniorRatersSet.add(name);
+        }
+      }
+    });
+    return Array.from(seniorRatersSet).sort();
+  }, [records]);
+
+  const getSeniorRaterMismatchInfo = (r: ArmyRatingRecord) => {
+    if (!r.raterId) return null;
+    
+    const raterRecord = records.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const expectedSeniorRaterId = raterRecord.raterId;
+    if (!expectedSeniorRaterId || expectedSeniorRaterId === "-") return null;
+    
+    // Check if they match
+    if (r.seniorRaterId === expectedSeniorRaterId) return null;
+    
+    const actualName = getRaterName(r.seniorRaterId);
+    const expectedName = getRaterName(expectedSeniorRaterId);
+    
+    if (actualName && expectedName && actualName !== "-" && expectedName !== "-") {
+      if (actualName.trim().toLowerCase() === expectedName.trim().toLowerCase()) {
+        return null;
+      }
+    }
+    
+    return {
+      raterName: getRaterName(r.raterId),
+      expectedName,
+      actualName
+    };
+  };
+
+  const mismatchCount = useMemo(() => {
+    let count = 0;
+    records.forEach(r => {
+      if (r.raterId && r.seniorRaterId) {
+        const raterRecord = records.find(rec => rec.id === r.raterId);
+        if (raterRecord && raterRecord.raterId && raterRecord.raterId !== "-") {
+          if (r.seniorRaterId !== raterRecord.raterId) {
+            const actualName = getRaterName(r.seniorRaterId);
+            const expectedName = getRaterName(raterRecord.raterId);
+            if (actualName && expectedName && actualName !== "-" && expectedName !== "-") {
+              if (actualName.trim().toLowerCase() !== expectedName.trim().toLowerCase()) {
+                count++;
+              }
+            }
+          }
+        }
+      }
+    });
+    return count;
+  }, [records]);
 
   // Role priority for custom sorting
   const ROLE_PRIORITY: Record<string, number> = {
@@ -106,7 +207,13 @@ export default function RatingTable({
 
       const matchesRole = selectedRole ? r.role === selectedRole : true;
 
-      return matchesSearch && matchesRole;
+      const raterName = getRaterName(r.raterId);
+      const matchesRater = selectedRater ? (r.raterId === selectedRater || raterName === selectedRater) : true;
+
+      const seniorRaterName = getRaterName(r.seniorRaterId);
+      const matchesSeniorRater = selectedSeniorRater ? (r.seniorRaterId === selectedSeniorRater || seniorRaterName === selectedSeniorRater) : true;
+
+      return matchesSearch && matchesRole && matchesRater && matchesSeniorRater;
     })
     .sort((a, b) => {
       if (sortAlphabetically) {
@@ -698,32 +805,39 @@ export default function RatingTable({
     }
   };
 
-  const getRaterName = (raterId: string) => {
-    if (!raterId) return "-";
-    const r = records.find(rec => rec.id === raterId);
-    if (r) return `${r.rank} ${r.name}`;
-    // If not found by ID, it might be a raw name string from import
-    return raterId;
-  };
-
   const getReviewerName = (reviewerId: string) => {
     if (!reviewerId) return "N/A";
     const r = records.find(rec => rec.id === reviewerId);
-    if (r) return `${r.rank} ${r.name}`;
+    if (r) {
+      if (r.rank) {
+        return `${r.name} (${r.rank})`;
+      }
+      return r.name;
+    }
     return reviewerId;
   };
 
   const getRaterNameInVersion = (raterId: string, versionRecords: ArmyRatingRecord[]) => {
     if (!raterId) return "-";
     const found = versionRecords.find(rec => rec.id === raterId);
-    if (found) return `${found.rank} ${found.name}`;
+    if (found) {
+      if (found.rank) {
+        return `${found.name} (${found.rank})`;
+      }
+      return found.name;
+    }
     return raterId;
   };
 
   const getReviewerNameInVersion = (reviewerId: string, versionRecords: ArmyRatingRecord[]) => {
     if (!reviewerId) return "N/A";
     const found = versionRecords.find(rec => rec.id === reviewerId);
-    if (found) return `${found.rank} ${found.name}`;
+    if (found) {
+      if (found.rank) {
+        return `${found.name} (${found.rank})`;
+      }
+      return found.name;
+    }
     return reviewerId;
   };
 
@@ -779,9 +893,9 @@ export default function RatingTable({
         <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
           
           {/* Left: Search & Filter selections */}
-          <div className="flex flex-col sm:flex-row gap-2 flex-1 max-w-3xl">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 flex-1">
             {/* Search Input */}
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
               <input
                 id="search-tracker"
@@ -798,13 +912,50 @@ export default function RatingTable({
               id="filter-role"
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[180px]"
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
             >
               <option value="">-- All Duty Titles --</option>
               {Object.values(RatingRole).map(role => (
                 <option key={role} value={role}>{role}</option>
               ))}
             </select>
+
+            {/* Filter by Rater */}
+            <select
+              id="filter-rater"
+              value={selectedRater}
+              onChange={(e) => setSelectedRater(e.target.value)}
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
+            >
+              <option value="">-- All Raters --</option>
+              {uniqueRaters.map(rater => (
+                <option key={rater} value={rater}>{rater}</option>
+              ))}
+            </select>
+
+            {/* Filter by Senior Rater */}
+            <select
+              id="filter-senior-rater"
+              value={selectedSeniorRater}
+              onChange={(e) => setSelectedSeniorRater(e.target.value)}
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
+            >
+              <option value="">-- All Senior Raters --</option>
+              {uniqueSeniorRaters.map(sr => (
+                <option key={sr} value={sr}>{sr}</option>
+              ))}
+            </select>
+
+            {hasAnyFilter && (
+              <button
+                type="button"
+                onClick={handleClearAllFilters}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 hover:border-rose-300 text-rose-700 hover:text-rose-800 rounded text-xs font-semibold transition-colors duration-200 cursor-pointer shadow-sm animate-fade-in"
+              >
+                <X className="w-3.5 h-3.5 text-rose-500" />
+                Clear Filters
+              </button>
+            )}
           </div>
 
           {/* Right: Actions */}
@@ -884,6 +1035,15 @@ export default function RatingTable({
           )}
         </div>
       </div>
+
+      {mismatchCount > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded p-3 text-rose-800 text-xs flex items-start gap-2.5 shadow-sm">
+          <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0 animate-pulse" />
+          <div className="flex-1">
+            <span className="font-bold">Rating Chain Mismatch Alert:</span> We identified <strong className="text-rose-900 font-extrabold">{mismatchCount} mismatch{mismatchCount === 1 ? "" : "es"}</strong> in the senior rater chain. In a standard rating chain, the Senior Rater is always supposed to be the Rater of the Rater. Check the cells highlighted with a <span className="font-bold text-rose-700">red border</span> below to correct them.
+          </div>
+        </div>
+      )}
 
       {/* Spreadsheet List Container */}
       <div className="bg-white rounded border border-slate-200 shadow-sm">
@@ -1049,6 +1209,8 @@ export default function RatingTable({
                     (r.submissionType || "ANN") !== (currentSoldier.submissionType || "ANN")
                   );
 
+                  const mismatchInfo = getSeniorRaterMismatchInfo(r);
+
                   return (
                     <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${getThruDateClass(r.thru) || (isEven ? "bg-slate-50/50" : "bg-white")}`}>
                       {/* Name */}
@@ -1099,11 +1261,40 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Senior Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isSeniorRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
-                        <div className="font-semibold text-slate-800">{getRaterName(r.seniorRaterId)}</div>
-                        {r.seniorRaterId && r.seniorRaterEffectiveDate && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Eff: {r.seniorRaterEffectiveDate}
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${
+                        mismatchInfo 
+                          ? "ring-2 ring-rose-500 ring-inset relative z-10 bg-rose-50/20" 
+                          : isSeniorRaterDiff 
+                            ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" 
+                            : ""
+                      }`}>
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="font-semibold text-slate-800">{getRaterName(r.seniorRaterId)}</div>
+                            {r.seniorRaterId && r.seniorRaterEffectiveDate && (
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                Eff: {r.seniorRaterEffectiveDate}
+                              </div>
+                            )}
+                          </div>
+                          {mismatchInfo && (
+                            <div className="relative group/tooltip flex-shrink-0">
+                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse cursor-help" />
+                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal">
+                                <p className="font-bold text-rose-400 mb-1">Senior Rater Mismatch</p>
+                                <p className="mb-1">
+                                  Rater <strong className="text-amber-300">{mismatchInfo.raterName}</strong> is rated by <strong className="text-amber-300">{mismatchInfo.expectedName}</strong>.
+                                </p>
+                                <p>
+                                  Expected Senior Rater: <strong className="text-emerald-400">{mismatchInfo.expectedName}</strong>
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {mismatchInfo && (
+                          <div className="text-[9px] text-rose-600 font-semibold leading-tight mt-1 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 max-w-[140px]">
+                            Expected: {mismatchInfo.expectedName}
                           </div>
                         )}
                       </td>
