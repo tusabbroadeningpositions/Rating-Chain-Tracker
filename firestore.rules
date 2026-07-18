@@ -69,6 +69,9 @@ service cloud.firestore {
              (!data.keys().hasAny(['submissionType']) || data.submissionType == null || (data.submissionType is string && data.submissionType.size() <= 200)) &&
              (!data.keys().hasAny(['version']) || data.version == null || (data.version is string && data.version.size() <= 100)) &&
              (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
+             (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
+             (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
+             (!data.keys().hasAny(['isCustomStatus']) || data.isCustomStatus is bool) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
@@ -145,7 +148,8 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly([
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
-                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 'keyLeaderTitle', 'updatedAt'
+                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
+                        'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isCustomStatus', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
                     );
                     

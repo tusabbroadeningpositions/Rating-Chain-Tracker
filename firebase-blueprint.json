@@ -129,6 +129,18 @@
           "type": "string",
           "description": "Version profile draft (e.g., current, future, alternate)."
         },
+        "ncoerStatus": {
+          "type": "string",
+          "description": "NCOER Status (e.g., Draft, Submitted, Completed)."
+        },
+        "ncoerStatusDate": {
+          "type": "string",
+          "description": "NCOER Status change date (YYYY-MM-DD)."
+        },
+        "isCustomStatus": {
+          "type": "boolean",
+          "description": "Flag if the status is a custom user-defined string."
+        },
         "updatedAt": {
           "type": "object",
           "description": "Firestore server timestamp representing the last update time."

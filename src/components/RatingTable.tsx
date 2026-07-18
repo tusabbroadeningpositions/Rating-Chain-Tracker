@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import { jsPDF } from "jspdf";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
@@ -78,6 +78,21 @@ export default function RatingTable({
   const [customStatusText, setCustomStatusText] = useState("");
   const [editingDateRecordId, setEditingDateRecordId] = useState<string | null>(null);
   const [tempDateValue, setTempDateValue] = useState("");
+  const [showGreenLine, setShowGreenLine] = useState(false);
+
+  useEffect(() => {
+    const handleWindowScroll = () => {
+      const active = window.scrollX > 2;
+      if (active !== showGreenLine) {
+        setShowGreenLine(active);
+      }
+    };
+
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+    };
+  }, [showGreenLine]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1576,12 +1591,21 @@ export default function RatingTable({
           </div>
         </div>
 
-        <div className="overflow-x-auto md:overflow-x-visible overflow-y-visible relative scrollbar-thin">
-          <table className="w-full text-left border-collapse text-[11px]" id="rating-records-table">
-            <thead className="sticky top-0 z-20 shadow-sm">
+        <div 
+          onScroll={(e) => {
+            const scrollLeft = e.currentTarget.scrollLeft;
+            const active = scrollLeft > 2;
+            if (active !== showGreenLine) {
+              setShowGreenLine(active);
+            }
+          }}
+          className="overflow-x-auto md:overflow-x-visible overflow-y-visible relative scrollbar-thin"
+        >
+          <table className="w-full min-w-max text-left border-collapse text-[11px]" id="rating-records-table">
+            <thead className="sticky top-0 z-[60] shadow-sm">
               {/* Floating Header Banner inside thead so it stays with column headers on scroll */}
-              <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden sticky top-0 z-20">
-                <th colSpan={12} className="px-3 py-2 bg-[#1e293b] border-b border-slate-700 sticky top-0 z-20">
+              <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden sticky top-0 z-[60]">
+                <th colSpan={12} className="px-3 py-2 bg-[#1e293b] border-b border-slate-700 sticky top-0 z-[60]">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 animate-pulse" />
@@ -1640,7 +1664,7 @@ export default function RatingTable({
                           />
                         </div>
                       )}
-                      {(selectedVersion === "future" || selectedVersion === "alternate") && (
+                      {selectedVersion === "current" ? null : (
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
                           <span className="text-[10px] text-slate-300 normal-case font-medium">
                             Proposed Effective Date:
@@ -1662,18 +1686,22 @@ export default function RatingTable({
                 </th>
               </tr>
               <tr className="border-b border-slate-200 uppercase tracking-tighter font-bold font-mono text-[11px] text-slate-500 bg-slate-100">
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-20">Name</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-20">Rank</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-20">Element</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-20">MOSC</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-20">Principal Duty Title</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[160px] min-w-[160px] bg-slate-50 sticky top-[32px] z-20">Dates (From - Thru)</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-20">Rater</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-20">Senior Rater</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-20">Reviewer</th>
-                <th className="px-1.5 py-2.5 border-r border-slate-200 text-center w-20 min-w-[80px] leading-tight bg-slate-50 sticky top-[32px] z-20">Submission Type</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[170px] min-w-[170px] text-center bg-slate-50 sticky top-[32px] z-20">NCOER Status</th>
-                <th className="px-3 py-2.5 text-right bg-slate-50 sticky top-[32px] z-20">Actions</th>
+                <th className={`px-3 py-2.5 bg-slate-50 sticky left-0 top-[32px] z-[55] transition-all duration-200 border-r border-slate-200 relative ${
+                  showGreenLine 
+                    ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:shadow-[1px_0_3px_rgba(16,185,129,0.5)] after:z-[56]" 
+                    : ""
+                }`}>Name</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Rank</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Element</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">MOSC</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Principal Duty Title</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[160px] min-w-[160px] bg-slate-50 sticky top-[32px] z-50">Dates (From - Thru)</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Rater</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Senior Rater</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Reviewer</th>
+                <th className="px-1.5 py-2.5 border-r border-slate-200 text-center w-20 min-w-[80px] leading-tight bg-slate-50 sticky top-[32px] z-50">Submission Type</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[170px] min-w-[170px] text-center bg-slate-50 sticky top-[32px] z-50">NCOER Status</th>
+                <th className="px-3 py-2.5 text-right bg-slate-50 sticky top-[32px] z-50">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -1724,9 +1752,17 @@ export default function RatingTable({
                   const mismatchInfo = getSeniorRaterMismatchInfo(r);
 
                   return (
-                    <tr key={r.id} className={`hover:bg-slate-50 transition-colors ${getThruDateClass(r.thru) || (isEven ? "bg-slate-50/50" : "bg-white")}`}>
+                    <tr key={r.id} className={`group hover:bg-slate-50 transition-colors ${getThruDateClass(r.thru) || (isEven ? "bg-slate-50/50" : "bg-white")}`}>
                       {/* Name */}
-                      <td className="px-3 py-2 font-semibold text-slate-900 border-r border-slate-100">
+                      <td className={`sticky left-0 z-30 px-3 py-2 font-semibold text-slate-900 transition-all duration-200 group-hover:bg-slate-100/90 border-r border-slate-200 relative ${
+                        showGreenLine 
+                          ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:shadow-[1px_0_3px_rgba(16,185,129,0.5)] after:z-10" 
+                          : ""
+                      } ${
+                        getThruDateClass(r.thru)
+                          ? (getThruDateClass(r.thru).includes("rose-100") ? "bg-rose-100" : "bg-amber-100")
+                          : (isEven ? "bg-slate-50" : "bg-white")
+                      }`}>
                         {r.name}
                       </td>
                       {/* Rank */}
