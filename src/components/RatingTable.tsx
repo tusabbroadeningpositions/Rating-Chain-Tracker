@@ -1750,18 +1750,30 @@ export default function RatingTable({
                   );
 
                   const mismatchInfo = getSeniorRaterMismatchInfo(r);
+                  const thruDateClass = getThruDateClass(r.thru);
+                  const isPastDue = thruDateClass.includes("rose-100");
+                  const isDueSoon = thruDateClass.includes("amber-100");
 
                   return (
-                    <tr key={r.id} className={`group hover:bg-slate-50 transition-colors ${getThruDateClass(r.thru) || (isEven ? "bg-slate-50/50" : "bg-white")}`}>
+                    <tr 
+                      key={r.id} 
+                      className={`group transition-colors ${
+                        thruDateClass 
+                          ? `${thruDateClass} ${isPastDue ? "hover:bg-rose-200/70" : "hover:bg-amber-200/70"}` 
+                          : `hover:bg-slate-50 ${isEven ? "bg-slate-50/50" : "bg-white"}`
+                      }`}
+                    >
                       {/* Name */}
-                      <td className={`sticky left-0 z-30 px-3 py-2 font-semibold text-slate-900 transition-all duration-200 group-hover:bg-slate-100/90 border-r border-slate-200 relative ${
+                      <td className={`sticky left-0 z-30 px-3 py-2 font-semibold text-slate-900 transition-all duration-200 border-r border-slate-200 relative ${
                         showGreenLine 
                           ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:shadow-[1px_0_3px_rgba(16,185,129,0.5)] after:z-10" 
                           : ""
                       } ${
-                        getThruDateClass(r.thru)
-                          ? (getThruDateClass(r.thru).includes("rose-100") ? "bg-rose-100" : "bg-amber-100")
-                          : (isEven ? "bg-slate-50" : "bg-white")
+                        isPastDue 
+                          ? "bg-rose-100 group-hover:bg-rose-200" 
+                          : isDueSoon 
+                            ? "bg-amber-100 group-hover:bg-amber-200" 
+                            : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100/90`
                       }`}>
                         {r.name}
                       </td>
