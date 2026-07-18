@@ -49,6 +49,9 @@ export interface ArmyRatingRecord {
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
   keyLeaderTitle?: string; // Custom title for key leader positions
   version?: "current" | "future" | "alternate"; // Version profile draft
+  ncoerStatus?: string; // NCOER Status
+  ncoerStatusDate?: string; // NCOER Status change date/timestamp (YYYY-MM-DD)
+  isCustomStatus?: boolean; // Flag if status is custom
 }
 
 export interface OrgNode {

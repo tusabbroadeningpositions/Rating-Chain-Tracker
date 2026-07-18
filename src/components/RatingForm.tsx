@@ -67,6 +67,10 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
   const [reviewerId, setReviewerId] = useState("");
   const [reviewerEffectiveDate, setReviewerEffectiveDate] = useState("");
   const [submissionType, setSubmissionType] = useState("ANN");
+  const [ncoerStatus, setNcoerStatus] = useState("");
+  const [ncoerStatusDate, setNcoerStatusDate] = useState("");
+  const [isCustomStatus, setIsCustomStatus] = useState(false);
+  const [customStatusText, setCustomStatusText] = useState("");
 
   // Initialize form with editing record or defaults
   useEffect(() => {
@@ -80,6 +84,10 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
       setDueHqdaDate(editingRecord.dueHqda);
+      setNcoerStatus(editingRecord.ncoerStatus || "");
+      setNcoerStatusDate(editingRecord.ncoerStatusDate || "");
+      setIsCustomStatus(!!editingRecord.isCustomStatus);
+      setCustomStatusText(editingRecord.isCustomStatus ? editingRecord.ncoerStatus || "" : "");
       
       const clean = (s: string) => s.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
       const findIdByName = (val: string) => {
@@ -122,6 +130,10 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       setReviewerId("");
       setReviewerEffectiveDate("");
       setSubmissionType("ANN");
+      setNcoerStatus("");
+      setNcoerStatusDate("");
+      setIsCustomStatus(false);
+      setCustomStatusText("");
     }
   }, [editingRecord]);
 
@@ -146,7 +158,10 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       reviewerEffectiveDate,
       submissionType,
       role,
-      keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : ""
+      keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : "",
+      ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
+      ncoerStatusDate: ncoerStatusDate || undefined,
+      isCustomStatus
     };
 
     onSave(savedRecord);
@@ -448,6 +463,74 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
                 />
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* NCOER Status Tracking */}
+      <div className="border-t border-slate-200 pt-3 space-y-2">
+        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">NCOER Status Tracking</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium text-slate-500 uppercase">NCOER Status</label>
+            <div className="flex flex-col gap-1.5">
+              <select
+                id="select-ncoer-status"
+                value={isCustomStatus ? "custom" : ncoerStatus}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "custom") {
+                    setIsCustomStatus(true);
+                    setNcoerStatus("");
+                    if (!ncoerStatusDate) {
+                      setNcoerStatusDate(new Date().toISOString().split('T')[0]);
+                    }
+                  } else {
+                    setIsCustomStatus(false);
+                    setNcoerStatus(val);
+                    if (val && !ncoerStatusDate) {
+                      setNcoerStatusDate(new Date().toISOString().split('T')[0]);
+                    } else if (!val) {
+                      setNcoerStatusDate("");
+                    }
+                  }
+                }}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
+              >
+                <option value="">-- Blank --</option>
+                <option value="Not Submitted to HR">Not Submitted to HR</option>
+                <option value="Submitted to HR">Submitted to HR</option>
+                <option value="Reviewing - HR">Reviewing - HR</option>
+                <option value="Reviewing - CSM">Reviewing - CSM</option>
+                <option value="Returned for Edits">Returned for Edits</option>
+                <option value="Out for Signatures">Out for Signatures</option>
+                <option value="Submitted to HQDA">Submitted to HQDA</option>
+                <option value="custom">Other / Custom Status...</option>
+              </select>
+
+              {isCustomStatus && (
+                <input
+                  id="input-custom-ncoer-status"
+                  type="text"
+                  placeholder="Enter Custom NCOER Status"
+                  value={customStatusText}
+                  onChange={(e) => setCustomStatusText(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-medium text-slate-500 uppercase">Status Date / Timestamp</label>
+            <input
+              id="input-ncoer-status-date"
+              type="date"
+              value={ncoerStatusDate}
+              onChange={(e) => setNcoerStatusDate(e.target.value)}
+              className="w-full px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+            />
+            <p className="text-[9px] text-slate-400">Date the NCOER Status was updated or set.</p>
           </div>
         </div>
       </div>

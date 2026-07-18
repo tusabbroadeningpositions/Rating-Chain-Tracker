@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useMemo } from "react";
+import { jsPDF } from "jspdf";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole } from "../types";
@@ -72,6 +73,11 @@ export default function RatingTable({
   const [dragActive, setDragActive] = useState(false);
   const [csvError, setCsvError] = useState("");
   const [importPending, setImportPending] = useState<ArmyRatingRecord[] | null>(null);
+  
+  const [activeCustomStatusRecordId, setActiveCustomStatusRecordId] = useState<string | null>(null);
+  const [customStatusText, setCustomStatusText] = useState("");
+  const [editingDateRecordId, setEditingDateRecordId] = useState<string | null>(null);
+  const [tempDateValue, setTempDateValue] = useState("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -246,6 +252,401 @@ export default function RatingTable({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Handle PDF NCOER Report Export
+  const handleExportNcoerReport = () => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const reportRecords = records.filter(r => {
+      if (!r.thru) return false;
+      try {
+        const thruDate = new Date(r.thru);
+        thruDate.setHours(0, 0, 0, 0);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 30; // true if within 30 days or past due
+      } catch (e) {
+        return false;
+      }
+    });
+
+    // Sort reportRecords by thru date ascending
+    reportRecords.sort((a, b) => {
+      const dateA = a.thru ? new Date(a.thru).getTime() : 0;
+      const dateB = b.thru ? new Date(b.thru).getTime() : 0;
+      return dateA - dateB;
+    });
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4"
+    });
+
+    const formatNiceDate = (dateStr: string | undefined): string => {
+      if (!dateStr) return "N/A";
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric"
+        });
+      } catch {
+        return dateStr || "N/A";
+      }
+    };
+
+    const getDaysRemainingText = (thruStr: string | undefined): { text: string; color: [number, number, number] } => {
+      if (!thruStr) return { text: "N/A", color: [100, 116, 139] };
+      try {
+        const thruDate = new Date(thruStr);
+        thruDate.setHours(0, 0, 0, 0);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) {
+          return { text: `${Math.abs(diffDays)}d OVERDUE`, color: [225, 29, 72] }; // rose-600
+        } else if (diffDays === 0) {
+          return { text: "DUE TODAY", color: [217, 119, 6] }; // amber-600
+        } else {
+          return { text: `${diffDays}d REMAINING`, color: [13, 148, 136] }; // teal-600
+        }
+      } catch {
+        return { text: "N/A", color: [100, 116, 139] };
+      }
+    };
+
+    const drawHeader = (pageNumber: number) => {
+      // Background slate band
+      doc.setFillColor(30, 41, 59); // deep slate #1E293B
+      doc.rect(0, 0, 297, 24, "F");
+
+      // Gold accent line underneath
+      doc.setFillColor(245, 158, 11); // amber-500
+      doc.rect(0, 24, 297, 1.5, "F");
+
+      // Title Text (with Roster Name in larger letters)
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`NCOER STATUS MONITORING REPORT - ${(activeSchemeName || "ACTIVE RATING SCHEME").toUpperCase()}`, 15, 14.5);
+
+      // As Of Date on the right
+      const todayStr = new Date().toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      });
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(251, 191, 36); // amber-400
+      doc.text(`AS OF: ${todayStr.toUpperCase()}`, 282, 14.5, { align: "right" });
+    };
+
+    const drawFooter = (pageNumber: number, totalPages?: number) => {
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.5);
+      doc.line(15, 195, 282, 195);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text("CONFIDENTIAL - FOR PROFESSIONAL ARMY USE ONLY", 15, 201);
+      
+      const pageStr = totalPages ? `Page ${pageNumber} of ${totalPages}` : `Page ${pageNumber}`;
+      doc.text(pageStr, 282, 201, { align: "right" });
+    };
+
+    const drawTableHeaders = (startY: number) => {
+      doc.setFillColor(51, 65, 85); // slate-700
+      doc.rect(15, startY, 267, 8, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+
+      doc.text("SOLDIER (RANK / NAME)", 17, startY + 5.5);
+      doc.text("DUTY TITLE & MOSC", 64, startY + 5.5);
+      doc.text("THRU DATE (DAYS)", 112, startY + 5.5);
+      doc.text("RATER", 142, startY + 5.5);
+      doc.text("SENIOR RATER", 179, startY + 5.5);
+      doc.text("NCOER STATUS", 216, startY + 5.5);
+      doc.text("STATUS DATE", 253, startY + 5.5);
+    };
+
+    const drawStatusPill = (x: number, y: number, w: number, h: number, status: string, isCustom: boolean) => {
+      let bg: [number, number, number] = [241, 245, 249]; // light gray
+      let textCol: [number, number, number] = [71, 85, 105]; // slate-600
+
+      if (status) {
+        if (isCustom) {
+          bg = [241, 245, 249];
+          textCol = [71, 85, 105];
+        } else {
+          switch (status) {
+            case "Not Submitted to HR":
+              bg = [254, 226, 226]; // rose-100
+              textCol = [159, 18, 57]; // rose-800
+              break;
+            case "Submitted to HR":
+            case "Reviewing - HR":
+            case "Reviewing - CSM":
+              bg = [219, 234, 254]; // blue-100
+              textCol = [30, 64, 175]; // blue-800
+              break;
+            case "Returned for Edits":
+              bg = [255, 237, 213]; // orange-100
+              textCol = [154, 52, 18]; // orange-800
+              break;
+            case "Out for Signatures":
+              bg = [254, 249, 195]; // yellow-100
+              textCol = [133, 77, 14]; // yellow-800
+              break;
+            case "Submitted to HQDA":
+              bg = [209, 250, 229]; // green-100
+              textCol = [6, 95, 70]; // green-800
+              break;
+          }
+        }
+      }
+
+      doc.setFillColor(bg[0], bg[1], bg[2]);
+      try {
+        (doc as any).roundedRect(x, y, w, h, 1, 1, "F");
+      } catch {
+        doc.rect(x, y, w, h, "F");
+      }
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(textCol[0], textCol[1], textCol[2]);
+      const textWidth = doc.getTextWidth(status || "—");
+      const textX = x + (w - textWidth) / 2;
+      doc.text(status || "—", textX, y + 4.5);
+    };
+
+    if (reportRecords.length === 0) {
+      drawHeader(1);
+      
+      // Draw Empty summary box
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(15, 28, 267, 16, "FD");
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("REPORT COVERAGE", 20, 33);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(148, 163, 184);
+      doc.text("No matching NCOER items found", 20, 39);
+      
+      drawTableHeaders(48);
+      
+      doc.setFillColor(255, 255, 255);
+      doc.rect(15, 56, 267, 20, "F");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("All NCOER schedules are currently up-to-date. No records are past due or within 30 days of their thru date.", 148, 68, { align: "center" });
+      
+      const sanitizedRoster = (activeSchemeName || "Active_Roster")
+        .replace(/[^a-zA-Z0-9-_ ]/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+
+      drawFooter(1, 1);
+      doc.save(`NCOER_Due_Report_${sanitizedRoster}_${new Date().toISOString().split('T')[0]}.pdf`);
+      return;
+    }
+
+    // Statistics Calculation
+    let totalPastDue = 0;
+    let totalComingDue = 0;
+
+    reportRecords.forEach(r => {
+      if (r.thru) {
+        const thruDate = new Date(r.thru);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) {
+          totalPastDue++;
+        } else {
+          totalComingDue++;
+        }
+      }
+    });
+
+    // Draw Stats Summary cards
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.rect(15, 28, 267, 16, "FD");
+
+    // Dividers
+    doc.line(100, 28, 100, 44);
+    doc.line(185, 28, 185, 44);
+
+    // Card 1: Coverage
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("REPORT FOCUS", 20, 33);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(30, 41, 59);
+    doc.text("NCOERs Due within 30 Days / Overdue", 20, 39);
+
+    // Card 2: Past Due
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("CRITICAL OVERDUE", 105, 33);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(225, 29, 72); // rose-600
+    doc.text(`${totalPastDue} Soldiers Overdue`, 105, 39);
+
+    // Card 3: Upcoming
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("UPCOMING ACTION (30 DAYS)", 190, 33);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(217, 119, 6); // amber-600
+    doc.text(`${totalComingDue} Soldiers Upcoming`, 190, 39);
+
+    let y = 56;
+    let pageNum = 1;
+
+    // Set up first page
+    drawHeader(pageNum);
+    drawTableHeaders(48);
+
+    reportRecords.forEach((r, idx) => {
+      const helperGetName = (id: string) => {
+        if (!id || id === "-") return "—";
+        const rec = records.find(x => x.id === id);
+        return rec ? `${rec.rank} ${rec.name}` : id;
+      };
+
+      const daysInfo = getDaysRemainingText(r.thru);
+      const ncoerInfo = getEffectiveNcoerStatusAndColor(r);
+
+      const soldierNameStr = `${r.rank} ${r.name}`;
+      const roleStr = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role}\n(${r.keyLeaderTitle})` : r.role;
+      const moscAndRole = `${roleStr}\n[MOSC: ${r.dutyMosc || "—"}]`;
+
+      const soldierLines = doc.splitTextToSize(soldierNameStr, 44) as string[];
+      const roleLines = doc.splitTextToSize(moscAndRole, 45) as string[];
+      const raterLines = doc.splitTextToSize(helperGetName(r.raterId), 34) as string[];
+      const srLines = doc.splitTextToSize(helperGetName(r.seniorRaterId), 34) as string[];
+
+      const maxLines = Math.max(soldierLines.length, roleLines.length, raterLines.length, srLines.length, 1.5);
+      const rowHeight = Math.max(9, maxLines * 4.2 + 2);
+
+      const pageHeightLimit = 190;
+      if (y + rowHeight > pageHeightLimit) {
+        drawFooter(pageNum);
+        doc.addPage();
+        pageNum++;
+        y = 36;
+        drawHeader(pageNum);
+        drawTableHeaders(28);
+      }
+
+      // Zebra striping background
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, y, 267, rowHeight, "F");
+      } else {
+        doc.setFillColor(255, 255, 255);
+        doc.rect(15, y, 267, rowHeight, "F");
+      }
+
+      // Cell border divider line
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.3);
+      doc.line(15, y + rowHeight, 282, y + rowHeight);
+
+      // Col 1: Name & Rank
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+      soldierLines.forEach((line, lIdx) => {
+        doc.text(line, 17, y + 4.5 + lIdx * 4);
+      });
+
+      // Col 2: Role & MOSC
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      roleLines.forEach((line, lIdx) => {
+        if (line.startsWith("[MOSC:")) {
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(14, 116, 144); // cyan-700
+        }
+        doc.text(line, 64, y + 4.2 + lIdx * 3.8);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(71, 85, 105);
+      });
+
+      // Col 3: Thru Date
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+      doc.text(formatNiceDate(r.thru), 112, y + 4.5);
+      
+      doc.setFontSize(7);
+      doc.setTextColor(daysInfo.color[0], daysInfo.color[1], daysInfo.color[2]);
+      doc.text(daysInfo.text, 112, y + 8.5);
+
+      // Col 4: Rater
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      raterLines.forEach((line, lIdx) => {
+        doc.text(line, 142, y + 4.5 + lIdx * 3.8);
+      });
+
+      // Col 5: Senior Rater
+      srLines.forEach((line, lIdx) => {
+        doc.text(line, 179, y + 4.5 + lIdx * 3.8);
+      });
+
+      // Col 6: NCOER Status Pill
+      const statusPillW = 30;
+      const statusPillH = 6.5;
+      const statusPillX = 218;
+      const statusPillY = y + (rowHeight - statusPillH) / 2 - 0.5;
+      drawStatusPill(statusPillX, statusPillY, statusPillW, statusPillH, ncoerInfo.status, ncoerInfo.isCustom);
+
+      // Col 7: Status Date
+      doc.setFont("helvetica", "mono");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      const statusDateStr = r.ncoerStatusDate || new Date().toISOString().split('T')[0];
+      doc.text(formatNiceDate(statusDateStr), 253, y + 4.5);
+
+      y += rowHeight;
+    });
+
+    const totalPages = pageNum;
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      drawFooter(i, totalPages);
+    }
+
+    const sanitizedRoster = (activeSchemeName || "Active_Roster")
+      .replace(/[^a-zA-Z0-9-_ ]/g, "")
+      .trim()
+      .replace(/\s+/g, "_");
+
+    doc.save(`NCOER_Due_Report_${sanitizedRoster}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   // Handle Excel Export
@@ -841,6 +1242,114 @@ export default function RatingTable({
     return reviewerId;
   };
 
+  const PREDEFINED_STATUSES = [
+    "Not Submitted to HR",
+    "Submitted to HR",
+    "Reviewing - HR",
+    "Reviewing - CSM",
+    "Returned for Edits",
+    "Out for Signatures",
+    "Submitted to HQDA"
+  ];
+
+  const getEffectiveNcoerStatusAndColor = (r: ArmyRatingRecord) => {
+    let status = r.ncoerStatus || "";
+    let isCustom = !!r.isCustomStatus || (status !== "" && !PREDEFINED_STATUSES.includes(status));
+
+    let isWithin30Days = false;
+    if (r.thru) {
+      try {
+        const thruDate = new Date(r.thru);
+        const now = new Date();
+        thruDate.setHours(0, 0, 0, 0);
+        now.setHours(0, 0, 0, 0);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays <= 30) {
+          isWithin30Days = true;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Default status in the cell is blank. 
+    // As soon as the thru date is within 30 days, it should change to "Not Submitted to HR"
+    let isAutoRed = false;
+    if (!status && isWithin30Days) {
+      status = "Not Submitted to HR";
+      isAutoRed = true;
+    }
+
+    let bgClass = "bg-white text-slate-800 border-slate-100"; // default blank
+    if (status) {
+      if (isCustom) {
+        bgClass = "bg-slate-100 text-slate-700 border-slate-200"; // custom -> gray
+      } else {
+        switch (status) {
+          case "Not Submitted to HR":
+            bgClass = "bg-rose-100 text-rose-800 border-rose-200";
+            break;
+          case "Submitted to HR":
+          case "Reviewing - HR":
+          case "Reviewing - CSM":
+            bgClass = "bg-blue-100 text-blue-800 border-blue-200";
+            break;
+          case "Returned for Edits":
+            bgClass = "bg-orange-100 text-orange-800 border-orange-200";
+            break;
+          case "Out for Signatures":
+            bgClass = "bg-amber-100 text-amber-800 border-amber-200";
+            break;
+          case "Submitted to HQDA":
+            bgClass = "bg-emerald-100 text-emerald-800 border-emerald-200";
+            break;
+          default:
+            bgClass = "bg-slate-100 text-slate-700 border-slate-200";
+            break;
+        }
+      }
+    }
+
+    return { status, bgClass, isAutoRed, isCustom, isWithin30Days };
+  };
+
+  const handleStatusChange = (r: ArmyRatingRecord, newStatus: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updatedRecord: ArmyRatingRecord = {
+      ...r,
+      ncoerStatus: newStatus || undefined,
+      isCustomStatus: false,
+      ncoerStatusDate: newStatus ? todayStr : undefined
+    };
+    onUpdateRecord(updatedRecord);
+  };
+
+  const handleSaveCustomStatus = (r: ArmyRatingRecord) => {
+    if (!customStatusText.trim()) {
+      setActiveCustomStatusRecordId(null);
+      return;
+    }
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updatedRecord: ArmyRatingRecord = {
+      ...r,
+      ncoerStatus: customStatusText.trim(),
+      isCustomStatus: true,
+      ncoerStatusDate: todayStr
+    };
+    onUpdateRecord(updatedRecord);
+    setActiveCustomStatusRecordId(null);
+  };
+
+  const handleSaveStatusDate = (r: ArmyRatingRecord) => {
+    const updatedRecord: ArmyRatingRecord = {
+      ...r,
+      ncoerStatusDate: tempDateValue || undefined
+    };
+    onUpdateRecord(updatedRecord);
+    setEditingDateRecordId(null);
+  };
+
   const getThruDateClass = (dateStr: string) => {
     if (!dateStr) return "";
     try {
@@ -987,12 +1496,13 @@ export default function RatingTable({
               Export Excel (.xlsx)
             </button>
             <button
-              onClick={handleDownloadTemplate}
-              className="px-3 py-1.5 text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded text-xs font-bold flex items-center gap-1.5 transition-colors"
-              id="btn-download-csv"
+              onClick={handleExportNcoerReport}
+              className="px-3 py-1.5 text-white bg-slate-800 hover:bg-slate-900 border border-slate-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              id="btn-export-ncoer-pdf"
+              title="Exports a professional PDF report showing NCOERs due within 30 days or past due"
             >
-              <FileDown className="w-3.5 h-3.5 text-slate-400" />
-              CSV Template
+              <FileDown className="w-3.5 h-3.5 text-amber-500" />
+              Export NCOER Report (PDF)
             </button>
             {readOnly && (
               <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
@@ -1071,7 +1581,7 @@ export default function RatingTable({
             <thead className="sticky top-0 z-20 shadow-sm">
               {/* Floating Header Banner inside thead so it stays with column headers on scroll */}
               <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden sticky top-0 z-20">
-                <th colSpan={11} className="px-3 py-2 bg-[#1e293b] border-b border-slate-700 sticky top-0 z-20">
+                <th colSpan={12} className="px-3 py-2 bg-[#1e293b] border-b border-slate-700 sticky top-0 z-20">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 animate-pulse" />
@@ -1162,19 +1672,21 @@ export default function RatingTable({
                 <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-20">Senior Rater</th>
                 <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-20">Reviewer</th>
                 <th className="px-1.5 py-2.5 border-r border-slate-200 text-center w-20 min-w-[80px] leading-tight bg-slate-50 sticky top-[32px] z-20">Submission Type</th>
+                <th className="px-3 py-2.5 border-r border-slate-200 w-[170px] min-w-[170px] text-center bg-slate-50 sticky top-[32px] z-20">NCOER Status</th>
                 <th className="px-3 py-2.5 text-right bg-slate-50 sticky top-[32px] z-20">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-slate-400 font-medium">
+                  <td colSpan={13} className="px-4 py-8 text-center text-slate-400 font-medium">
                     No records found matching your search and filter criteria.
                   </td>
                 </tr>
               ) : (
                 filteredRecords.map((r, idx) => {
                   const colors = getRoleColors(r.role);
+                  const ncoerInfo = getEffectiveNcoerStatusAndColor(r);
                   const isEven = idx % 2 === 1;
 
                   // Comparison for versions (Future/Alternate vs Current)
@@ -1312,6 +1824,130 @@ export default function RatingTable({
                         <span className={`inline-block px-2 py-0.5 border font-bold font-mono text-[10px] rounded uppercase ${getSubmissionBadgeStyles(r.submissionType || "ANN")}`}>
                           {r.submissionType || "ANN"}
                         </span>
+                      </td>
+                      {/* NCOER Status */}
+                      <td className={`px-3 py-2 border-r border-slate-100 text-center relative ${ncoerInfo.bgClass}`}>
+                        <div className="flex flex-col items-center gap-1">
+                          {/* Status Selector Dropdown or Static Badge */}
+                          {ncoerInfo.isWithin30Days ? (
+                            <select
+                              value={ncoerInfo.isCustom ? "custom" : ncoerInfo.status}
+                              disabled={readOnly}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setCustomStatusText(ncoerInfo.isCustom ? ncoerInfo.status : "");
+                                  setActiveCustomStatusRecordId(r.id);
+                                } else {
+                                  handleStatusChange(r, val);
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 text-slate-800 cursor-pointer w-full max-w-[150px]`}
+                            >
+                              <option value="">-- Blank --</option>
+                              <option value="Not Submitted to HR">Not Submitted to HR</option>
+                              <option value="Submitted to HR">Submitted to HR</option>
+                              <option value="Reviewing - HR">Reviewing - HR</option>
+                              <option value="Reviewing - CSM">Reviewing - CSM</option>
+                              <option value="Returned for Edits">Returned for Edits</option>
+                              <option value="Out for Signatures">Out for Signatures</option>
+                              <option value="Submitted to HQDA">Submitted to HQDA</option>
+                              <option value="custom">Other / Custom...</option>
+                            </select>
+                          ) : ncoerInfo.status ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold select-none border border-black/10">
+                              {ncoerInfo.status}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-semibold text-[10px] select-none">—</span>
+                          )}
+
+                          {/* Inline input for custom status if active */}
+                          {activeCustomStatusRecordId === r.id && (
+                            <div className="absolute inset-x-1 top-1 bg-white p-2 rounded shadow-lg border border-slate-200 z-30 flex flex-col gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="Custom status text"
+                                value={customStatusText}
+                                onChange={(e) => setCustomStatusText(e.target.value)}
+                                className="px-2 py-1 text-[11px] border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 w-full text-slate-800 font-medium"
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveCustomStatusRecordId(null)}
+                                  className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] hover:bg-slate-200 transition-colors font-medium"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveCustomStatus(r)}
+                                  className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[9px] hover:bg-amber-600 transition-colors font-semibold"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Status Date / Timestamp */}
+                          {ncoerInfo.status && (
+                            <div className="mt-0.5 flex items-center justify-center gap-1 group/date">
+                              {editingDateRecordId === r.id ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="date"
+                                    value={tempDateValue}
+                                    onChange={(e) => setTempDateValue(e.target.value)}
+                                    className="px-1 py-0.5 text-[9px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-mono text-slate-800 animate-fade-in"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => handleSaveStatusDate(r)}
+                                    className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 font-sans"
+                                    title="Save Date"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingDateRecordId(null)}
+                                    className="text-[9px] font-extrabold text-rose-500 hover:text-rose-600 font-sans"
+                                    title="Cancel"
+                                  >
+                                    ✗
+                                  </button>
+                                </div>
+                              ) : (
+                                <span 
+                                  onClick={() => {
+                                    if (!readOnly) {
+                                      setTempDateValue(r.ncoerStatusDate || new Date().toISOString().split('T')[0]);
+                                      setEditingDateRecordId(r.id);
+                                    }
+                                  }}
+                                  className="text-[9px] text-slate-500 font-mono flex items-center gap-0.5 cursor-pointer hover:bg-slate-200/50 px-1 rounded transition-colors"
+                                  title="Click to edit date"
+                                >
+                                  {r.ncoerStatusDate || new Date().toISOString().split('T')[0]}
+                                  {!readOnly && (
+                                    <span className="opacity-0 group-hover/date:opacity-100 text-[8px] text-slate-400 font-sans ml-0.5">
+                                      (edit)
+                                    </span>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Helper auto-indicator badge */}
+                          {ncoerInfo.isAutoRed && (
+                            <span className="text-[8px] font-semibold text-rose-700 bg-rose-200/40 border border-rose-300/30 px-1 py-0.2 rounded mt-0.5 uppercase tracking-wider scale-95 origin-center">
+                              Auto-Set (30d)
+                            </span>
+                          )}
+                        </div>
                       </td>
                       {/* Actions */}
                       <td className="px-3 py-2 text-right">
