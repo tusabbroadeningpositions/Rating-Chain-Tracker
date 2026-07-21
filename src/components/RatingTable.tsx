@@ -2141,7 +2141,7 @@ export default function RatingTable({
                           {(ncoerInfo.isWithin30Days || ncoerRecord.priorThru) ? (
                             <select
                               value={ncoerInfo.isCustom ? "custom" : ncoerInfo.status}
-                              disabled={readOnly}
+                              disabled={readOnly || selectedVersion !== "current"}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val === "custom") {
@@ -2151,7 +2151,11 @@ export default function RatingTable({
                                   handleStatusChange(ncoerRecord, val);
                                 }
                               }}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 text-slate-800 cursor-pointer w-full max-w-[150px] shadow-sm ${ncoerRecord.priorThru ? "mt-4" : ""}`}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 shadow-sm w-full max-w-[150px] ${
+                                (readOnly || selectedVersion !== "current") 
+                                  ? "text-slate-400 cursor-not-allowed bg-slate-100/50 border-slate-200" 
+                                  : "text-slate-800 cursor-pointer"
+                              } ${ncoerRecord.priorThru ? "mt-4" : ""}`}
                             >
                               <option value="">-- Blank --</option>
                               <option value="Not Submitted to HR">Not Submitted to HR</option>
@@ -2170,7 +2174,7 @@ export default function RatingTable({
                           ) : (
                             <div className="flex items-center gap-1">
                               <span className="text-slate-300 font-semibold text-[10px] select-none">—</span>
-                              {!readOnly && (
+                              {!readOnly && selectedVersion === "current" && (
                                 <button
                                   onClick={() => handleOpenManualLate(ncoerRecord)}
                                   className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors"

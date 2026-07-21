@@ -1058,6 +1058,7 @@ export default function App() {
                       onSave={handleSaveRecord}
                       onCancel={handleFormCancel}
                       editingRecord={editingRecord}
+                      selectedVersion={selectedVersion}
                     />
                   </div>
                 </div>

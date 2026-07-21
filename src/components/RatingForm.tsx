@@ -15,12 +15,13 @@ interface RatingFormProps {
   onSave: (record: ArmyRatingRecord) => void;
   onCancel: () => void;
   editingRecord: ArmyRatingRecord | null;
+  selectedVersion?: "current" | "future" | "alternate";
 }
 
 const COMMON_RANKS = ["SSG", "SFC", "MSG", "SGM", "1LT", "2LT", "CPT", "MAJ", "LTC", "COL"];
 const COMMON_ELEMENTS = ["Ceremonial", "Chorus", "Concert", "Popular", "Strings", "Support"];
 
-export default function RatingForm({ records, allRecords, onSave, onCancel, editingRecord }: RatingFormProps) {
+export default function RatingForm({ records, allRecords, onSave, onCancel, editingRecord, selectedVersion }: RatingFormProps) {
   const [name, setName] = useState("");
   const [rank, setRank] = useState("SSG");
   const [dutyMosc, setDutyMosc] = useState("42S3O");
@@ -158,8 +159,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     .filter(r => !editingRecord || r.id !== editingRecord.id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
-  const isProjected = editingRecord?.version === "future";
-  const isAlternate = editingRecord?.version === "alternate";
+  const activeVersion = editingRecord ? (editingRecord.version || "current") : (selectedVersion || "current");
+  const isCurrentVersion = activeVersion === "current";
+  const isProjected = activeVersion === "future";
+  const isAlternate = activeVersion === "alternate";
 
   return (
     <form 
@@ -490,6 +493,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               <select
                 id="select-ncoer-status"
                 value={isCustomStatus ? "custom" : ncoerStatus}
+                disabled={!isCurrentVersion}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === "custom") {
@@ -508,7 +512,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                     }
                   }
                 }}
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
+                className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold ${
+                  !isCurrentVersion 
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" 
+                    : "text-slate-800 bg-slate-50/50"
+                }`}
               >
                 <option value="">-- Blank --</option>
                 <option value="Not Submitted to HR">Not Submitted to HR</option>
@@ -527,9 +535,20 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   type="text"
                   placeholder="Enter Custom NCOER Status"
                   value={customStatusText}
+                  disabled={!isCurrentVersion}
                   onChange={(e) => setCustomStatusText(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                  className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                    !isCurrentVersion 
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" 
+                      : "text-slate-800 bg-slate-50/50"
+                  }`}
                 />
+              )}
+
+              {!isCurrentVersion && (
+                <p className="text-[10px] text-slate-500 font-medium italic mt-1 leading-normal">
+                  NCOER Status is read-only in draft modeling views ({activeVersion === "future" ? "Projected" : "Alternate"}) and can only be updated from the Current roster view.
+                </p>
               )}
             </div>
           </div>
