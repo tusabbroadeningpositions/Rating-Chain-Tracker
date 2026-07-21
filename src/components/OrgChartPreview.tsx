@@ -8,7 +8,7 @@ import { motion } from "motion/react";
 import { ArmyRatingRecord, RatingRole } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
-import { ZoomIn, ZoomOut, Maximize2, FileDown, Printer, Info, User, ChevronRight, Calendar } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar } from "lucide-react";
 
 interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
@@ -30,6 +30,18 @@ export default function OrgChartPreview({
   });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ArmyRatingRecord | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Listen for Escape key to exit fullscreen mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Implement scroll wheel / pinch zoom
   useEffect(() => {
@@ -176,78 +188,161 @@ export default function OrgChartPreview({
   };
 
   return (
-    <div className="space-y-4">
+    <div className={isFullscreen ? "" : "space-y-4"}>
       
       {/* Control Panel */}
-      <div className="bg-white rounded border border-slate-200 p-4 flex flex-wrap gap-4 justify-between items-center print:hidden shadow-sm">
-        {/* Left: View Options */}
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Zoom controls */}
-          <div className="flex items-center gap-1 bg-slate-50 rounded p-1 border border-slate-200">
+      {!isFullscreen && (
+        <div className="bg-white rounded border border-slate-200 p-4 flex flex-wrap gap-4 justify-between items-center print:hidden shadow-sm">
+          {/* Left: View Options */}
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Zoom controls */}
+            <div className="flex items-center gap-1 bg-slate-50 rounded p-1 border border-slate-200">
+              <button
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.05))}
+                className="p-1 rounded hover:bg-white text-slate-600 hover:text-slate-800 transition-colors"
+                id="btn-zoom-out"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-mono font-bold text-slate-600 px-1.5">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                onClick={() => setZoom(Math.min(1.5, zoom + 0.05))}
+                className="p-1 rounded hover:bg-white text-slate-600 hover:text-slate-800 transition-colors"
+                id="btn-zoom-in"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setZoom(0.95)}
+                className="p-1 rounded hover:bg-white text-slate-500 hover:text-slate-800 transition-colors ml-1 border-l border-slate-200"
+                id="btn-zoom-reset"
+                title="Reset Zoom"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Full Screen toggle button */}
             <button
-              onClick={() => setZoom(Math.max(0.5, zoom - 0.05))}
-              className="p-1 rounded hover:bg-white text-slate-600 hover:text-slate-800 transition-colors"
-              id="btn-zoom-out"
-              title="Zoom Out"
+              onClick={() => setIsFullscreen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded border border-slate-200 text-xs font-bold transition-all shadow-sm"
+              id="btn-toggle-fullscreen"
+              title="Full Screen Mode"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>FULL SCREEN</span>
             </button>
-            <span className="text-xs font-mono font-bold text-slate-600 px-1.5">
-              {Math.round(zoom * 100)}%
-            </span>
+          </div>
+
+          {/* Right: Export Options */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setZoom(Math.min(1.5, zoom + 0.05))}
-              className="p-1 rounded hover:bg-white text-slate-600 hover:text-slate-800 transition-colors"
-              id="btn-zoom-in"
-              title="Zoom In"
+              onClick={handleExportPPTX}
+              className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+              id="btn-export-pptx"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setZoom(0.95)}
-              className="p-1 rounded hover:bg-white text-slate-500 hover:text-slate-800 transition-colors ml-1 border-l border-slate-200"
-              id="btn-zoom-reset"
-              title="Reset Zoom"
-            >
-              <Maximize2 className="w-3 h-3" />
+              <FileDown className="w-3.5 h-3.5" />
+              EXPORT PPTX
             </button>
           </div>
         </div>
-
-        {/* Right: Export Options */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExportPPTX}
-            className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
-            id="btn-export-pptx"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            EXPORT PPTX
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Visual Chart Area (Full Width) */}
-      <div className="space-y-3">
+      <div className={isFullscreen ? "" : "space-y-3"}>
           {/* Professional Disclaimer Note - Positioned directly above preview */}
-          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded shadow-sm flex items-start gap-3 print:hidden">
-            <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div>
-              <h3 className="text-[11px] font-bold text-blue-900 uppercase tracking-tight">Visualization Preview</h3>
-              <p className="text-[10px] text-blue-800 mt-0.5 leading-relaxed">
-                This interactive display is provided for rapid preview and layout verification. 
-                The official PowerPoint export is automatically formatted in strict accordance with HR regulatory guidance 
-                to ensure professional presentation, precision, and structural compliance.
-              </p>
+          {!isFullscreen && (
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded shadow-sm flex items-start gap-3 print:hidden">
+              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="text-[11px] font-bold text-blue-900 uppercase tracking-tight">Visualization Preview</h3>
+                <p className="text-[10px] text-blue-800 mt-0.5 leading-relaxed">
+                  This interactive display is provided for rapid preview and layout verification. 
+                  The official PowerPoint export is automatically formatted in strict accordance with HR regulatory guidance 
+                  to ensure professional presentation, precision, and structural compliance.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="bg-slate-900 rounded p-5 border border-slate-950 overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between">
-            {/* Scrollable View Wrapper */}
-            <div 
-              ref={containerRef}
-              className="flex-1 overflow-hidden p-4 relative cursor-grab active:cursor-grabbing bg-slate-900/50"
-            >
+          <div className={isFullscreen 
+            ? "fixed inset-0 z-50 bg-slate-950 flex flex-col h-screen w-screen overflow-hidden p-0" 
+            : "bg-slate-900 rounded p-5 border border-slate-950 overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between"
+          }>
+            {isFullscreen && (
+              <div className="bg-slate-900 border-b border-slate-800 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                  <div>
+                    <h2 className="text-xs font-black text-slate-100 tracking-wider uppercase flex items-center gap-2">
+                      Visual Org Chart Bubble Map
+                    </h2>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-bold uppercase tracking-widest">{activeSchemeName}</p>
+                  </div>
+                </div>
+                
+                {/* Center: Controls */}
+                <div className="flex items-center gap-4">
+                  {/* Zoom controls */}
+                  <div className="flex items-center gap-1 bg-slate-800 rounded p-1 border border-slate-700">
+                    <button
+                      onClick={() => setZoom(Math.max(0.5, zoom - 0.05))}
+                      className="p-1.5 rounded hover:bg-slate-750 text-slate-300 hover:text-slate-100 transition-colors"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-mono font-bold text-slate-300 px-2 min-w-[3.5rem] text-center">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <button
+                      onClick={() => setZoom(Math.min(1.5, zoom + 0.05))}
+                      className="p-1.5 rounded hover:bg-slate-750 text-slate-300 hover:text-slate-100 transition-colors"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setZoom(0.95)}
+                      className="p-1.5 rounded hover:bg-slate-750 text-slate-400 hover:text-slate-200 transition-colors ml-1 border-l border-slate-750"
+                      title="Reset Zoom"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportPPTX}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    EXPORT PPTX
+                  </button>
+                  
+                  <button
+                    onClick={() => setIsFullscreen(false)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    EXIT FULL SCREEN
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className={isFullscreen ? "flex-1 flex overflow-hidden relative bg-slate-950" : "flex flex-col flex-1"}>
+              {/* Scrollable View Wrapper */}
+              <div 
+                ref={containerRef}
+                className={`flex-1 overflow-hidden p-4 relative cursor-grab active:cursor-grabbing ${isFullscreen ? "bg-slate-950" : "bg-slate-900/50"}`}
+              >
               <div className="absolute top-2 right-2 z-10 pointer-events-none opacity-40">
                 <div className="text-[9px] text-slate-400 font-mono flex items-center gap-1.5">
                   <ZoomIn className="w-3 h-3" />
@@ -623,11 +718,99 @@ export default function OrgChartPreview({
 
             </motion.div>
           </div>
+
+          {/* Fullscreen Side Inspector Panel */}
+          {isFullscreen && selectedNode && (
+            <div className="w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl">
+              <div className="p-4 space-y-4 overflow-y-auto">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                  <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Active Soldier</span>
+                  <button 
+                    onClick={() => setSelectedNode(null)}
+                    className="text-slate-400 hover:text-slate-250 text-xs font-semibold"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-100 mt-0.5">{selectedNode.name}</h3>
+                    <p className="text-xs text-slate-400 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
+                  </div>
+
+                  <div className="border-t border-slate-800 pt-3 text-xs space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Element:</span>
+                      <span className="font-semibold text-slate-200">{selectedNode.element}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Principal Duty:</span>
+                      <span className="font-semibold text-slate-200">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Period:</span>
+                      <span className="font-semibold text-slate-200 font-mono">{selectedNode.from} to {selectedNode.thru}</span>
+                    </div>
+                  </div>
+
+                  {/* Assigned Hierarchy */}
+                  <div className="space-y-2 pt-3 border-t border-slate-800">
+                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
+                    
+                    <div className="p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs">
+                      <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
+                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-850 border-l-4 border-indigo-500 rounded text-xs">
+                      <div className="text-slate-400 font-bold uppercase text-[8px]">Senior Rater</div>
+                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-850 border-l-4 border-slate-400 rounded text-xs">
+                      <div className="text-slate-400 font-bold uppercase text-[8px]">Reviewer</div>
+                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex gap-2 shrink-0">
+                {!readOnly ? (
+                  <>
+                    <button
+                      onClick={() => onEditClick(selectedNode)}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-colors"
+                    >
+                      Edit Profile
+                    </button>
+                    <button
+                      onClick={() => setSelectedNode(null)}
+                      className="py-2 px-3 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
+                    >
+                      Clear
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setSelectedNode(null)}
+                    className="flex-1 py-2 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
+                  >
+                    Clear Selection
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>
           
         </div>
       </div>
 
       {/* Rating Chain Inspector (Full Width, below the chart) */}
+      {!isFullscreen && (
       <div className="bg-white border border-slate-200 rounded p-4 space-y-4 print:hidden shadow-sm flex flex-col mt-4">
         <div className="p-2 border-b border-slate-200 bg-slate-50 flex justify-between items-center -mx-4 -mt-4 rounded-t">
           <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
@@ -767,6 +950,7 @@ export default function OrgChartPreview({
           </div>
         )}
       </div>
+      )}
   </div>
 );
 }
