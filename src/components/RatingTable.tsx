@@ -8,9 +8,12 @@ import { jsPDF } from "jspdf";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole } from "../types";
-import { parseCSV, generateTemplateCSV } from "../utils/csvHandler";
+import { parseCSV, generateTemplateCSV, formatDateToMDYYYY } from "../utils/csvHandler";
+import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw } from "lucide-react";
+import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord } from "../lib/firebaseService";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface RatingTableProps {
   records: ArmyRatingRecord[];
@@ -79,6 +82,22 @@ export default function RatingTable({
   const [editingDateRecordId, setEditingDateRecordId] = useState<string | null>(null);
   const [tempDateValue, setTempDateValue] = useState("");
   const [showGreenLine, setShowGreenLine] = useState(false);
+  const [expandedHistoryRecordId, setExpandedHistoryRecordId] = useState<string | null>(null);
+  const [recordHistory, setRecordHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [lateShiftPromptRecord, setLateShiftPromptRecord] = useState<ArmyRatingRecord | null>(null);
+  const [manualLateRecord, setManualLateRecord] = useState<ArmyRatingRecord | null>(null);
+  const [manualLateThru, setManualLateThru] = useState("");
+  const [lateEditingRecordId, setLateEditingRecordId] = useState<string | null>(null);
+  const [historyConfirm, setHistoryConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    onConfirm: () => void;
+    variant: "danger" | "warning" | "info" | "question";
+  } | null>(null);
 
   useEffect(() => {
     const handleWindowScroll = () => {
@@ -96,6 +115,16 @@ export default function RatingTable({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const findCurrentRecord = (r: ArmyRatingRecord) => {
+    if (!r) return r;
+    if ((r.version || "current") === "current") return r;
+    const searchSource = allRecords || records || [];
+    return searchSource.find(cr => 
+      (cr.version || "current") === "current" && 
+      cr.name.trim().toLowerCase() === r.name.trim().toLowerCase()
+    ) || r;
+  };
+
   const hasAnyFilter = !!(searchTerm || selectedRole || selectedRater || selectedSeniorRater);
 
   const handleClearAllFilters = () => {
@@ -107,7 +136,8 @@ export default function RatingTable({
 
   const getRaterName = (raterId: string) => {
     if (!raterId) return "-";
-    const r = records.find(rec => rec.id === raterId);
+    const searchSource = allRecords || records;
+    const r = searchSource.find(rec => rec.id === raterId);
     if (r) {
       if (r.rank) {
         return `${r.name} (${r.rank})`;
@@ -174,22 +204,37 @@ export default function RatingTable({
     };
   };
 
+  const getReviewerMismatchInfo = (r: ArmyRatingRecord) => {
+    if (!r.seniorRaterId || r.seniorRaterId === "-") return null;
+    
+    const seniorRaterRecord = records.find(rec => rec.id === r.seniorRaterId);
+    if (!seniorRaterRecord) return null;
+    
+    // A reviewer is required if the senior rater is a MSG
+    if (seniorRaterRecord.rank !== "MSG") return null;
+    
+    // Check if reviewer is listed
+    const hasReviewer = r.reviewerId && r.reviewerId !== "-";
+    if (hasReviewer) return null;
+    
+    // If missing, find the expected reviewer (Senior Rater's Rater)
+    const expectedReviewerId = seniorRaterRecord.raterId;
+    const expectedName = expectedReviewerId ? getRaterName(expectedReviewerId) : "SGM Reviewer";
+    
+    return {
+      seniorRaterName: getRaterName(r.seniorRaterId),
+      expectedName
+    };
+  };
+
   const mismatchCount = useMemo(() => {
     let count = 0;
     records.forEach(r => {
-      if (r.raterId && r.seniorRaterId) {
-        const raterRecord = records.find(rec => rec.id === r.raterId);
-        if (raterRecord && raterRecord.raterId && raterRecord.raterId !== "-") {
-          if (r.seniorRaterId !== raterRecord.raterId) {
-            const actualName = getRaterName(r.seniorRaterId);
-            const expectedName = getRaterName(raterRecord.raterId);
-            if (actualName && expectedName && actualName !== "-" && expectedName !== "-") {
-              if (actualName.trim().toLowerCase() !== expectedName.trim().toLowerCase()) {
-                count++;
-              }
-            }
-          }
-        }
+      if (getSeniorRaterMismatchInfo(r)) {
+        count++;
+      }
+      if (getReviewerMismatchInfo(r)) {
+        count++;
       }
     });
     return count;
@@ -274,23 +319,41 @@ export default function RatingTable({
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
-    const reportRecords = records.filter(r => {
-      if (!r.thru) return false;
-      try {
-        const thruDate = new Date(r.thru);
-        thruDate.setHours(0, 0, 0, 0);
-        const diffTime = thruDate.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays <= 30; // true if within 30 days or past due
-      } catch (e) {
-        return false;
+    const reportItems: { record: ArmyRatingRecord; thru: string; isLate: boolean }[] = [];
+
+    records.forEach(r => {
+      const currentRec = findCurrentRecord(r);
+      // Check current NCOER
+      if (r.thru) {
+        try {
+          const thruDate = new Date(r.thru);
+          thruDate.setHours(0, 0, 0, 0);
+          const diffTime = thruDate.getTime() - now.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays <= 30) {
+            reportItems.push({
+              record: r,
+              thru: r.thru,
+              isLate: false
+            });
+          }
+        } catch (e) {}
+      }
+
+      // Check Late NCOER - include it regardless of thru date
+      if (currentRec.priorThru) {
+        reportItems.push({
+          record: r,
+          thru: currentRec.priorThru,
+          isLate: true
+        });
       }
     });
 
-    // Sort reportRecords by thru date ascending
-    reportRecords.sort((a, b) => {
-      const dateA = a.thru ? new Date(a.thru).getTime() : 0;
-      const dateB = b.thru ? new Date(b.thru).getTime() : 0;
+    // Sort reportItems by thru date ascending
+    reportItems.sort((a, b) => {
+      const dateA = new Date(a.thru).getTime() || 0;
+      const dateB = new Date(b.thru).getTime() || 0;
       return dateA - dateB;
     });
 
@@ -326,7 +389,7 @@ export default function RatingTable({
         } else if (diffDays === 0) {
           return { text: "DUE TODAY", color: [217, 119, 6] }; // amber-600
         } else {
-          return { text: `${diffDays}d REMAINING`, color: [13, 148, 136] }; // teal-600
+          return { text: `${diffDays}d REMAINING`, color: [217, 119, 6] }; // amber-600
         }
       } catch {
         return { text: "N/A", color: [100, 116, 139] };
@@ -334,6 +397,7 @@ export default function RatingTable({
     };
 
     const drawHeader = (pageNumber: number) => {
+      if (pageNumber > 1) return;
       // Background slate band
       doc.setFillColor(30, 41, 59); // deep slate #1E293B
       doc.rect(0, 0, 297, 24, "F");
@@ -369,9 +433,8 @@ export default function RatingTable({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139); // slate-500
-      doc.text("CONFIDENTIAL - FOR PROFESSIONAL ARMY USE ONLY", 15, 201);
       
-      const pageStr = totalPages ? `Page ${pageNumber} of ${totalPages}` : `Page ${pageNumber}`;
+      const pageStr = totalPages ? `page ${pageNumber} of ${totalPages}` : `page ${pageNumber}`;
       doc.text(pageStr, 282, 201, { align: "right" });
     };
 
@@ -443,7 +506,7 @@ export default function RatingTable({
       doc.text(status || "—", textX, y + 4.5);
     };
 
-    if (reportRecords.length === 0) {
+    if (reportItems.length === 0) {
       drawHeader(1);
       
       // Draw Empty summary box
@@ -483,9 +546,10 @@ export default function RatingTable({
     let totalPastDue = 0;
     let totalComingDue = 0;
 
-    reportRecords.forEach(r => {
-      if (r.thru) {
-        const thruDate = new Date(r.thru);
+    reportItems.forEach(item => {
+      const r = item.record;
+      if (item.thru) {
+        const thruDate = new Date(item.thru);
         const diffTime = thruDate.getTime() - now.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         if (diffDays < 0) {
@@ -542,15 +606,25 @@ export default function RatingTable({
     drawHeader(pageNum);
     drawTableHeaders(48);
 
-    reportRecords.forEach((r, idx) => {
+    reportItems.forEach((item, idx) => {
+      const r = item.record;
+      const thruToUse = item.thru;
+      
       const helperGetName = (id: string) => {
         if (!id || id === "-") return "—";
         const rec = records.find(x => x.id === id);
         return rec ? `${rec.rank} ${rec.name}` : id;
       };
 
-      const daysInfo = getDaysRemainingText(r.thru);
+      const currentRec = findCurrentRecord(r);
+      const daysInfo = getDaysRemainingText(thruToUse);
       const ncoerInfo = getEffectiveNcoerStatusAndColor(r);
+
+      // Use the actual status for late mode if available, otherwise default to Not Submitted to HR
+      let statusToDraw = ncoerInfo.status;
+      if (item.isLate) {
+        statusToDraw = (currentRec.ncoerStatus && currentRec.ncoerStatus !== "-") ? currentRec.ncoerStatus : "Not Submitted to HR";
+      }
 
       const soldierNameStr = `${r.rank} ${r.name}`;
       const roleStr = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role}\n(${r.keyLeaderTitle})` : r.role;
@@ -566,12 +640,10 @@ export default function RatingTable({
 
       const pageHeightLimit = 190;
       if (y + rowHeight > pageHeightLimit) {
-        drawFooter(pageNum);
         doc.addPage();
         pageNum++;
-        y = 36;
-        drawHeader(pageNum);
-        drawTableHeaders(28);
+        y = 23;
+        drawTableHeaders(15);
       }
 
       // Zebra striping background
@@ -614,7 +686,7 @@ export default function RatingTable({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.setTextColor(30, 41, 59);
-      doc.text(formatNiceDate(r.thru), 112, y + 4.5);
+      doc.text(formatNiceDate(thruToUse), 112, y + 4.5);
       
       doc.setFontSize(7);
       doc.setTextColor(daysInfo.color[0], daysInfo.color[1], daysInfo.color[2]);
@@ -638,13 +710,13 @@ export default function RatingTable({
       const statusPillH = 6.5;
       const statusPillX = 218;
       const statusPillY = y + (rowHeight - statusPillH) / 2 - 0.5;
-      drawStatusPill(statusPillX, statusPillY, statusPillW, statusPillH, ncoerInfo.status, ncoerInfo.isCustom);
+      drawStatusPill(statusPillX, statusPillY, statusPillW, statusPillH, statusToDraw, ncoerInfo.isCustom);
 
       // Col 7: Status Date
       doc.setFont("helvetica", "mono");
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      const statusDateStr = r.ncoerStatusDate || new Date().toISOString().split('T')[0];
+      const statusDateStr = item.isLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (currentRec.ncoerStatusDate || new Date().toISOString().split('T')[0]);
       doc.text(formatNiceDate(statusDateStr), 253, y + 4.5);
 
       y += rowHeight;
@@ -666,39 +738,6 @@ export default function RatingTable({
 
   // Handle Excel Export
   const handleExportExcel = () => {
-    const formatToYYYYMMDD = (dateStr: string | undefined): string => {
-      if (!dateStr) return "";
-      const clean = dateStr.trim();
-      if (!clean) return "";
-      const replaced = clean.replace(/[\/\-]/g, "");
-      if (/^\d{8}$/.test(replaced)) {
-        return replaced;
-      }
-      const m = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-      if (m) {
-        const mm = m[1].padStart(2, "0");
-        const dd = m[2].padStart(2, "0");
-        const yyyy = m[3];
-        return `${yyyy}${mm}${dd}`;
-      }
-      const m2 = clean.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
-      if (m2) {
-        const yyyy = m2[1];
-        const mm = m2[2].padStart(2, "0");
-        const dd = m2[3].padStart(2, "0");
-        return `${yyyy}${mm}${dd}`;
-      }
-      const parsed = Date.parse(clean);
-      if (!isNaN(parsed)) {
-        const d = new Date(parsed);
-        const yyyy = d.getFullYear().toString();
-        const mm = (d.getMonth() + 1).toString().padStart(2, "0");
-        const dd = d.getDate().toString().padStart(2, "0");
-        return `${yyyy}${mm}${dd}`;
-      }
-      return clean;
-    };
-
     // Sort records in the exact same order as display
     const sortedExportRecords = [...records].sort((a, b) => {
       if (sortAlphabetically) {
@@ -730,15 +769,15 @@ export default function RatingTable({
         "Duty MOSC": r.dutyMosc,
         "Rank": r.rank,
         "Name": r.name,
-        "From": formatToYYYYMMDD(r.from),
-        "Thru": formatToYYYYMMDD(r.thru),
-        "Due to\nHQDA": formatToYYYYMMDD(r.dueHqda),
+        "From": formatDateToMDYYYY(r.from),
+        "Thru": formatDateToMDYYYY(r.thru),
+        "Due to\nHQDA": formatDateToMDYYYY(r.dueHqda || add90Days(r.thru)),
         "Rater": helperGetName(r.raterId),
-        "Rater\nEffective Date": formatToYYYYMMDD(r.raterEffectiveDate),
+        "Rater\nEffective Date": formatDateToMDYYYY(r.raterEffectiveDate),
         "Senior Rater": helperGetName(r.seniorRaterId),
-        "Senior Rater\nEffective Date": formatToYYYYMMDD(r.seniorRaterEffectiveDate),
+        "Senior Rater\nEffective Date": formatDateToMDYYYY(r.seniorRaterEffectiveDate),
         "Reviewer": helperGetName(r.reviewerId),
-        "Reviewer\nEffective Date": formatToYYYYMMDD(r.reviewerEffectiveDate),
+        "Reviewer\nEffective Date": formatDateToMDYYYY(r.reviewerEffectiveDate),
         "Submission\nType": r.submissionType || "ANN"
       };
     });
@@ -1115,7 +1154,7 @@ export default function RatingTable({
             dutyMosc: String(getVal(idxDutyMosc, "42R")).trim(),
             from: normalizeDate(getVal(idxFrom, "")),
             thru: normalizeDate(getVal(idxThru, "")),
-            dueHqda: normalizeDate(getVal(idxDueHqda, "")),
+            dueHqda: normalizeDate(getVal(idxDueHqda, "")) || add90Days(normalizeDate(getVal(idxThru, ""))),
             raterId: String(getVal(idxRater, "")).trim(),
             raterEffectiveDate: normalizeDate(getVal(idxRaterEffectiveDate, "")),
             seniorRaterId: String(getVal(idxSeniorRater, "")).trim(),
@@ -1267,14 +1306,75 @@ export default function RatingTable({
     "Submitted to HQDA"
   ];
 
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
+    if (expandedHistoryRecordId) {
+      setIsHistoryLoading(true);
+      unsubscribe = subscribeToRecordHistory(expandedHistoryRecordId, (history) => {
+        setRecordHistory(history);
+        setIsHistoryLoading(false);
+      });
+    } else {
+      setRecordHistory([]);
+      setIsHistoryLoading(false);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [expandedHistoryRecordId]);
+
+  const toggleHistory = (recordId: string) => {
+    if (expandedHistoryRecordId === recordId) {
+      setExpandedHistoryRecordId(null);
+    } else {
+      setExpandedHistoryRecordId(recordId);
+    }
+  };
+
+  const getDiffClass = (currentRecord: ArmyRatingRecord, historyRecord: any, field: keyof ArmyRatingRecord) => {
+    let curVal = currentRecord[field];
+    let histVal = historyRecord[field];
+    
+    // If it's a rater field, compare by resolved name instead of ID because IDs change between versions
+    if (field === 'raterId' || field === 'seniorRaterId' || field === 'reviewerId') {
+      curVal = getRaterName(curVal as string);
+      // For history records, they might not have the ID in the allRecords list if they were deleted
+      // but getRaterName handles that gracefully.
+      histVal = getRaterName(histVal as string);
+    }
+    
+    // Normalize values for comparison
+    const normalize = (val: any) => (val === undefined || val === null ? "" : String(val).trim());
+    
+    if (normalize(curVal) !== normalize(histVal)) {
+      return "ring-2 ring-yellow-400 ring-inset bg-yellow-50/50";
+    }
+    return "";
+  };
+
+  const formatSnapshotDate = (timestamp: any) => {
+    if (!timestamp) return "Unknown Date";
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const getEffectiveNcoerStatusAndColor = (r: ArmyRatingRecord) => {
-    let status = r.ncoerStatus || "";
-    let isCustom = !!r.isCustomStatus || (status !== "" && !PREDEFINED_STATUSES.includes(status));
+    const targetRecord = findCurrentRecord(r);
+    let status = targetRecord.ncoerStatus || "";
+    let isCustom = !!targetRecord.isCustomStatus || (status !== "" && !PREDEFINED_STATUSES.includes(status));
 
     let isWithin30Days = false;
-    if (r.thru) {
+    if (targetRecord.thru) {
       try {
-        const thruDate = new Date(r.thru);
+        const thruDate = new Date(targetRecord.thru);
         const now = new Date();
         thruDate.setHours(0, 0, 0, 0);
         now.setHours(0, 0, 0, 0);
@@ -1291,13 +1391,13 @@ export default function RatingTable({
     // Default status in the cell is blank. 
     // As soon as the thru date is within 30 days, it should change to "Not Submitted to HR"
     let isAutoRed = false;
-    if (!status && isWithin30Days) {
+    if (!status && isWithin30Days && !targetRecord.priorThru) {
       status = "Not Submitted to HR";
       isAutoRed = true;
     }
 
     let bgClass = "bg-white text-slate-800 border-slate-100"; // default blank
-    if (status) {
+    if (status || targetRecord.priorThru) {
       if (isCustom) {
         bgClass = "bg-slate-100 text-slate-700 border-slate-200"; // custom -> gray
       } else {
@@ -1330,9 +1430,34 @@ export default function RatingTable({
   };
 
   const handleStatusChange = (r: ArmyRatingRecord, newStatus: string) => {
+    const targetRecord = findCurrentRecord(r);
     const todayStr = new Date().toISOString().split('T')[0];
+    
+    if (newStatus === "Submitted to HQDA") {
+      setHistoryConfirm({
+        isOpen: true,
+        title: "Reset Status Cell?",
+        message: "NCOER Submitted to HQDA. Would you like to reset this status cell? If yes, it will remain empty until 30 days prior to the next Thru date.",
+        confirmLabel: "YES, RESET",
+        cancelLabel: "NO, KEEP STATUS",
+        variant: "question",
+        onConfirm: () => {
+          onUpdateRecord({
+            ...targetRecord,
+            ncoerStatus: undefined,
+            isCustomStatus: false,
+            ncoerStatusDate: undefined,
+            priorThru: undefined,
+            priorDueHqda: undefined
+          });
+        }
+      });
+      // We don't return here because we still want to set the status to "Submitted to HQDA" 
+      // if they choose NO or before they confirm.
+    }
+
     const updatedRecord: ArmyRatingRecord = {
-      ...r,
+      ...targetRecord,
       ncoerStatus: newStatus || undefined,
       isCustomStatus: false,
       ncoerStatusDate: newStatus ? todayStr : undefined
@@ -1341,13 +1466,14 @@ export default function RatingTable({
   };
 
   const handleSaveCustomStatus = (r: ArmyRatingRecord) => {
+    const targetRecord = findCurrentRecord(r);
     if (!customStatusText.trim()) {
       setActiveCustomStatusRecordId(null);
       return;
     }
     const todayStr = new Date().toISOString().split('T')[0];
     const updatedRecord: ArmyRatingRecord = {
-      ...r,
+      ...targetRecord,
       ncoerStatus: customStatusText.trim(),
       isCustomStatus: true,
       ncoerStatusDate: todayStr
@@ -1391,10 +1517,14 @@ export default function RatingTable({
   };
 
   const handleShiftYear = (r: ArmyRatingRecord) => {
+    setLateShiftPromptRecord(r);
+  };
+
+  const confirmShiftYear = (r: ArmyRatingRecord, hasBeenSubmitted: boolean) => {
     const shiftDate = (dateStr: string) => {
       if (!dateStr) return "";
       try {
-        const d = new Date(dateStr);
+        const d = new Date(dateStr + "T12:00:00");
         if (isNaN(d.getTime())) return dateStr;
         d.setFullYear(d.getFullYear() + 1);
         return d.toISOString().split('T')[0];
@@ -1403,17 +1533,72 @@ export default function RatingTable({
       }
     };
 
+    const newThru = shiftDate(r.thru);
+    const newFrom = shiftDate(r.from);
+    
+    if (hasBeenSubmitted) {
+      onUpdateRecord({
+        ...r,
+        from: newFrom,
+        thru: newThru,
+        dueHqda: add90Days(newThru),
+        ncoerStatus: undefined,
+        priorThru: undefined,
+        priorDueHqda: undefined
+      });
+    } else {
+      const priorThru = r.thru;
+      const priorDueHqda = r.dueHqda || add90Days(r.thru);
+      
+      onUpdateRecord({
+        ...r,
+        from: newFrom,
+        thru: newThru,
+        dueHqda: add90Days(newThru),
+        priorThru: priorThru,
+        priorDueHqda: priorDueHqda,
+        // Keep current ncoerStatus
+      });
+    }
+    setLateShiftPromptRecord(null);
+  };
+
+  const handleOpenManualLate = (r: ArmyRatingRecord) => {
+    setManualLateRecord(r);
+    // Default thru date is one year prior to current thru
+    try {
+      const d = new Date(r.thru + "T12:00:00");
+      d.setFullYear(d.getFullYear() - 1);
+      setManualLateThru(d.toISOString().split('T')[0]);
+    } catch (e) {
+      setManualLateThru("");
+    }
+  };
+
+  const handleSaveManualLate = () => {
+    if (!manualLateRecord || !manualLateThru) return;
+    
     onUpdateRecord({
-      ...r,
-      from: shiftDate(r.from),
-      thru: shiftDate(r.thru)
+      ...manualLateRecord,
+      priorThru: manualLateThru,
+      priorDueHqda: add90Days(manualLateThru),
+      ncoerStatus: "Not Submitted to HR" // Default to a late status
     });
+    setManualLateRecord(null);
   };
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 transition-colors duration-500 min-h-screen ${
+      selectedVersion === "future" 
+        ? "bg-blue-50/20" 
+        : selectedVersion === "alternate" 
+          ? "bg-emerald-50/20" 
+          : "bg-slate-50/30"
+    }`}>
       {/* Search, Filter & Actions Bar */}
-      <div className="bg-white rounded shadow-sm border border-slate-200 p-3 space-y-3">
+      <div className={`bg-white rounded shadow-sm border p-3 space-y-3 mx-4 mt-4 ${
+        selectedVersion === "future" ? "border-blue-200" : selectedVersion === "alternate" ? "border-emerald-200" : "border-slate-200"
+      }`}>
         <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
           
           {/* Left: Search & Filter selections */}
@@ -1565,7 +1750,12 @@ export default function RatingTable({
         <div className="bg-rose-50 border border-rose-200 rounded p-3 text-rose-800 text-xs flex items-start gap-2.5 shadow-sm">
           <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0 animate-pulse" />
           <div className="flex-1">
-            <span className="font-bold">Rating Chain Mismatch Alert:</span> We identified <strong className="text-rose-900 font-extrabold">{mismatchCount} mismatch{mismatchCount === 1 ? "" : "es"}</strong> in the senior rater chain. In a standard rating chain, the Senior Rater is always supposed to be the Rater of the Rater. Check the cells highlighted with a <span className="font-bold text-rose-700">red border</span> below to correct them.
+            <span className="font-bold">Rating Chain & Reviewer Alert:</span> We identified <strong className="text-rose-900 font-extrabold">{mismatchCount} discrepancy{mismatchCount === 1 ? "" : "ies"}</strong> in the rating chain or reviewer requirements. 
+            Check the cells highlighted with <span className="font-bold text-rose-700">red or purple borders</span> below. 
+            <ul className="mt-1 ml-4 list-disc space-y-0.5 opacity-90">
+              <li>Senior Raters should always be the Rater of the Rater.</li>
+              <li>A SGM Reviewer is <strong className="font-bold">mandatory</strong> if the Senior Rater is rank MSG.</li>
+            </ul>
           </div>
         </div>
       )}
@@ -1605,7 +1795,11 @@ export default function RatingTable({
             <thead className="sticky top-0 z-[60] shadow-sm">
               {/* Floating Header Banner inside thead so it stays with column headers on scroll */}
               <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden sticky top-0 z-[60]">
-                <th colSpan={12} className="px-3 py-2 bg-[#1e293b] border-b border-slate-700 sticky top-0 z-[60]">
+                <th colSpan={12} className={`px-3 py-2 border-b sticky top-0 z-[60] transition-colors duration-300 ${
+                  selectedVersion === "future" ? "bg-blue-500 border-blue-600 text-white" : 
+                  selectedVersion === "alternate" ? "bg-emerald-500 border-emerald-600 text-white" : 
+                  "bg-blue-950 border-blue-900 text-white"
+                }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 animate-pulse" />
@@ -1636,7 +1830,7 @@ export default function RatingTable({
                               : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
-                          Future
+                          Projected
                         </button>
                         <button
                           type="button"
@@ -1715,6 +1909,7 @@ export default function RatingTable({
                 filteredRecords.map((r, idx) => {
                   const colors = getRoleColors(r.role);
                   const ncoerInfo = getEffectiveNcoerStatusAndColor(r);
+                  const ncoerRecord = findCurrentRecord(r);
                   const isEven = idx % 2 === 1;
 
                   // Comparison for versions (Future/Alternate vs Current)
@@ -1750,19 +1945,24 @@ export default function RatingTable({
                   );
 
                   const mismatchInfo = getSeniorRaterMismatchInfo(r);
+                  const reviewerMismatchInfo = getReviewerMismatchInfo(r);
                   const thruDateClass = getThruDateClass(r.thru);
                   const isPastDue = thruDateClass.includes("rose-100");
                   const isDueSoon = thruDateClass.includes("amber-100");
 
                   return (
-                    <tr 
-                      key={r.id} 
-                      className={`group transition-colors ${
-                        thruDateClass 
-                          ? `${thruDateClass} ${isPastDue ? "hover:bg-rose-200/70" : "hover:bg-amber-200/70"}` 
-                          : `hover:bg-slate-50 ${isEven ? "bg-slate-50/50" : "bg-white"}`
-                      }`}
-                    >
+                    <React.Fragment key={r.id}>
+                      <tr 
+                        className={`group transition-colors ${
+                          thruDateClass 
+                            ? `${thruDateClass} ${isPastDue ? "hover:bg-rose-200/70" : "hover:bg-amber-200/70"}` 
+                            : selectedVersion === "future" 
+                              ? `bg-blue-100/50 hover:bg-blue-200/60`
+                              : selectedVersion === "alternate"
+                                ? `bg-emerald-100/50 hover:bg-emerald-200/60`
+                                : `hover:bg-slate-50 ${isEven ? "bg-slate-50/50" : "bg-white"}`
+                        }`}
+                      >
                       {/* Name */}
                       <td className={`sticky left-0 z-30 px-3 py-2 font-semibold text-slate-900 transition-all duration-200 border-r border-slate-200 relative ${
                         showGreenLine 
@@ -1773,9 +1973,30 @@ export default function RatingTable({
                           ? "bg-rose-100 group-hover:bg-rose-200" 
                           : isDueSoon 
                             ? "bg-amber-100 group-hover:bg-amber-200" 
-                            : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100/90`
+                            : selectedVersion === "future"
+                              ? "bg-blue-100/80 group-hover:bg-blue-200/90"
+                              : selectedVersion === "alternate"
+                                ? "bg-emerald-100/80 group-hover:bg-emerald-100/90"
+                                : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100/90`
                       }`}>
-                        {r.name}
+                        <div className="flex flex-col">
+                          <span className="leading-tight">{r.name}</span>
+                          {selectedVersion === "current" && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); toggleHistory(r.id); }}
+                              className={`mt-1.5 flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[8px] uppercase font-bold tracking-tighter transition-all w-fit ${
+                                expandedHistoryRecordId === r.id 
+                                  ? "bg-slate-800 text-white shadow-sm" 
+                                  : "bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-800"
+                              }`}
+                              title="View Change History"
+                            >
+                              <History className="w-2.5 h-2.5" />
+                              Projected / History
+                              {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       {/* Rank */}
                       <td className={`px-3 py-2 border-r border-slate-100 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
@@ -1808,7 +2029,7 @@ export default function RatingTable({
                           </span>
                         </div>
                         <div className="text-[10px] text-red-600 font-bold font-mono">
-                          HQDA: {r.dueHqda}
+                          HQDA: {r.dueHqda || add90Days(r.thru)}
                         </div>
                       </td>
                       {/* Rater */}
@@ -1859,11 +2080,40 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Reviewer */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isReviewerDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
-                        <div className="font-semibold text-slate-800">{getReviewerName(r.reviewerId)}</div>
-                        {r.reviewerId && r.reviewerEffectiveDate && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Eff: {r.reviewerEffectiveDate}
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${
+                        reviewerMismatchInfo 
+                          ? "ring-2 ring-purple-500 ring-inset relative z-10 bg-purple-50/20" 
+                          : isReviewerDiff 
+                            ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" 
+                            : ""
+                      }`}>
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="font-semibold text-slate-800">{getReviewerName(r.reviewerId)}</div>
+                            {r.reviewerId && r.reviewerEffectiveDate && (
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                Eff: {r.reviewerEffectiveDate}
+                              </div>
+                            )}
+                          </div>
+                          {reviewerMismatchInfo && (
+                            <div className="relative group/tooltip flex-shrink-0">
+                              <HelpCircle className="w-4 h-4 text-purple-500 animate-pulse cursor-help" />
+                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
+                                <p className="font-bold text-purple-400 mb-1">SGM Reviewer Required</p>
+                                <p className="mb-1 italic">
+                                  Senior Rater <strong className="text-amber-300">{reviewerMismatchInfo.seniorRaterName}</strong> is rank MSG.
+                                </p>
+                                <p>
+                                  Expected Reviewer: <strong className="text-emerald-400">{reviewerMismatchInfo.expectedName}</strong>
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {reviewerMismatchInfo && (
+                          <div className="text-[9px] text-purple-600 font-semibold leading-tight mt-1 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[140px]">
+                            Expected: {reviewerMismatchInfo.expectedName}
                           </div>
                         )}
                       </td>
@@ -1875,9 +2125,20 @@ export default function RatingTable({
                       </td>
                       {/* NCOER Status */}
                       <td className={`px-3 py-2 border-r border-slate-100 text-center relative ${ncoerInfo.bgClass}`}>
-                        <div className="flex flex-col items-center gap-1">
+                        {ncoerRecord.priorThru && (
+                          <div className="absolute top-0.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center">
+                            <span className="text-[7px] font-black uppercase text-white bg-amber-600 px-1 rounded shadow-sm leading-none py-0.5 whitespace-nowrap">
+                              LATE
+                            </span>
+                            <div className="bg-white/80 px-1 py-0.5 rounded-sm border border-amber-200 mt-0.5 shadow-xs">
+                              <p className="text-[6px] font-bold text-amber-900 leading-none">THRU: {ncoerRecord.priorThru}</p>
+                              <p className="text-[6px] font-bold text-rose-700 leading-none mt-0.5">HQDA: {ncoerRecord.priorDueHqda}</p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-col items-center gap-1 pt-1">
                           {/* Status Selector Dropdown or Static Badge */}
-                          {ncoerInfo.isWithin30Days ? (
+                          {(ncoerInfo.isWithin30Days || ncoerRecord.priorThru) ? (
                             <select
                               value={ncoerInfo.isCustom ? "custom" : ncoerInfo.status}
                               disabled={readOnly}
@@ -1887,10 +2148,10 @@ export default function RatingTable({
                                   setCustomStatusText(ncoerInfo.isCustom ? ncoerInfo.status : "");
                                   setActiveCustomStatusRecordId(r.id);
                                 } else {
-                                  handleStatusChange(r, val);
+                                  handleStatusChange(ncoerRecord, val);
                                 }
                               }}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 text-slate-800 cursor-pointer w-full max-w-[150px]`}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 text-slate-800 cursor-pointer w-full max-w-[150px] shadow-sm ${ncoerRecord.priorThru ? "mt-4" : ""}`}
                             >
                               <option value="">-- Blank --</option>
                               <option value="Not Submitted to HR">Not Submitted to HR</option>
@@ -1907,8 +2168,20 @@ export default function RatingTable({
                               {ncoerInfo.status}
                             </span>
                           ) : (
-                            <span className="text-slate-300 font-semibold text-[10px] select-none">—</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-300 font-semibold text-[10px] select-none">—</span>
+                              {!readOnly && (
+                                <button
+                                  onClick={() => handleOpenManualLate(ncoerRecord)}
+                                  className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors"
+                                  title="Add Late NCOER"
+                                >
+                                  <Info className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                           )}
+                        </div>
 
                           {/* Inline input for custom status if active */}
                           {activeCustomStatusRecordId === r.id && (
@@ -1931,7 +2204,7 @@ export default function RatingTable({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleSaveCustomStatus(r)}
+                                  onClick={() => handleSaveCustomStatus(ncoerRecord)}
                                   className="px-1.5 py-0.5 bg-amber-500 text-white rounded text-[9px] hover:bg-amber-600 transition-colors font-semibold"
                                 >
                                   Save
@@ -1940,62 +2213,8 @@ export default function RatingTable({
                             </div>
                           )}
 
-                          {/* Status Date / Timestamp */}
-                          {ncoerInfo.status && (
-                            <div className="mt-0.5 flex items-center justify-center gap-1 group/date">
-                              {editingDateRecordId === r.id ? (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="date"
-                                    value={tempDateValue}
-                                    onChange={(e) => setTempDateValue(e.target.value)}
-                                    className="px-1 py-0.5 text-[9px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white font-mono text-slate-800 animate-fade-in"
-                                    autoFocus
-                                  />
-                                  <button
-                                    onClick={() => handleSaveStatusDate(r)}
-                                    className="text-[9px] font-extrabold text-emerald-600 hover:text-emerald-700 font-sans"
-                                    title="Save Date"
-                                  >
-                                    ✓
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingDateRecordId(null)}
-                                    className="text-[9px] font-extrabold text-rose-500 hover:text-rose-600 font-sans"
-                                    title="Cancel"
-                                  >
-                                    ✗
-                                  </button>
-                                </div>
-                              ) : (
-                                <span 
-                                  onClick={() => {
-                                    if (!readOnly) {
-                                      setTempDateValue(r.ncoerStatusDate || new Date().toISOString().split('T')[0]);
-                                      setEditingDateRecordId(r.id);
-                                    }
-                                  }}
-                                  className="text-[9px] text-slate-500 font-mono flex items-center gap-0.5 cursor-pointer hover:bg-slate-200/50 px-1 rounded transition-colors"
-                                  title="Click to edit date"
-                                >
-                                  {r.ncoerStatusDate || new Date().toISOString().split('T')[0]}
-                                  {!readOnly && (
-                                    <span className="opacity-0 group-hover/date:opacity-100 text-[8px] text-slate-400 font-sans ml-0.5">
-                                      (edit)
-                                    </span>
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                          )}
-
                           {/* Helper auto-indicator badge */}
-                          {ncoerInfo.isAutoRed && (
-                            <span className="text-[8px] font-semibold text-rose-700 bg-rose-200/40 border border-rose-300/30 px-1 py-0.2 rounded mt-0.5 uppercase tracking-wider scale-95 origin-center">
-                              Auto-Set (30d)
-                            </span>
-                          )}
-                        </div>
+                          {/* Auto-set badge removed per user request */}
                       </td>
                       {/* Actions */}
                       <td className="px-3 py-2 text-right">
@@ -2030,6 +2249,310 @@ export default function RatingTable({
                         )}
                       </td>
                     </tr>
+                    {expandedHistoryRecordId === r.id && (
+                      <tr className="bg-slate-100/80 border-b border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <td colSpan={13} className="px-0 py-0">
+                          <div className="pl-12 pr-6 py-4 bg-slate-100/50 shadow-inner border-l-4 border-slate-400">
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className="p-1.5 bg-slate-200 rounded-full">
+                                <History className="w-4 h-4 text-slate-600" />
+                              </div>
+                              <div>
+                                <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-tight leading-none">Record Change History</h4>
+                                <p className="text-[10px] text-slate-500 font-medium mt-1">Viewing all previous snapshots for <span className="text-slate-700 font-bold">{r.name}</span></p>
+                              </div>
+                              {isHistoryLoading && (
+                                <div className="ml-4 flex items-center gap-2 px-2 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
+                                  <RefreshCw className="w-3 h-3 text-emerald-500 animate-spin" />
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Syncing History...</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-4">
+                              {/* Projected Version Inclusion */}
+                              {(() => {
+                                const projected = allRecords.find(pr => 
+                                  pr.version === "future" && 
+                                  pr.name.toLowerCase() === r.name.toLowerCase() && 
+                                  pr.rank.toLowerCase() === r.rank.toLowerCase()
+                                );
+                                
+                                if (!projected) return null;
+                                
+                                return (
+                                  <div className="bg-blue-50/50 border border-blue-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md ring-1 ring-blue-300/50">
+                                    <div className="bg-blue-600/10 px-4 py-2 border-b border-blue-200 flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Projected Version</span>
+                                          <div className="flex items-center gap-1.5 bg-white/80 px-2 py-0.5 rounded border border-blue-200 shadow-sm">
+                                            <Info className="w-3 h-3 text-blue-500" />
+                                            <span className="text-[9px] font-bold text-blue-600 uppercase tracking-tight italic">
+                                              Current state in "Projected" roster profile
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onEdit(projected);
+                                          }}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded border border-blue-700 transition-all uppercase tracking-tight shadow-md active:scale-95"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                          Edit Projected Draft
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="overflow-x-auto scrollbar-thin">
+                                      <table className="w-full text-left text-[10px] border-collapse">
+                                        <thead>
+                                          <tr className="bg-blue-100/30 text-[9px] text-blue-500 font-black uppercase tracking-tighter border-b border-blue-100">
+                                            <th className="px-3 py-2 border-r border-blue-100">Name</th>
+                                            <th className="px-3 py-2 border-r border-blue-100 text-center">Rank</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Element</th>
+                                            <th className="px-3 py-2 border-r border-blue-100 text-center">MOSC</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Duty Title</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Rating Dates</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Rater</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Senior Rater</th>
+                                            <th className="px-3 py-2 border-r border-blue-100">Reviewer</th>
+                                            <th className="px-3 py-2 text-center">NCOER Status</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr className="bg-blue-50/30 hover:bg-blue-100/20 transition-colors">
+                                            <td className={`px-3 py-3 border-r border-blue-100 font-bold text-slate-800 ${getDiffClass(r, projected, 'name')}`}>
+                                              {projected.name}
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 text-center ${getDiffClass(r, projected, 'rank')}`}>
+                                              <span className="px-1.5 py-0.5 bg-white rounded border border-blue-200 font-mono font-bold text-blue-700">{projected.rank}</span>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 text-slate-600 font-medium ${getDiffClass(r, projected, 'element')}`}>
+                                              {projected.element}
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 text-center ${getDiffClass(r, projected, 'dutyMosc')}`}>
+                                              <span className="px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200 text-amber-800 font-mono font-bold">{projected.dutyMosc}</span>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'role')}`}>
+                                              <span className="text-[10px] font-medium text-slate-700">{projected.role}</span>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 font-mono text-slate-500 ${getDiffClass(r, projected, 'from') || getDiffClass(r, projected, 'thru')}`}>
+                                              <div className="flex flex-col leading-tight">
+                                                <span>F: {projected.from}</span>
+                                                <span>T: {projected.thru}</span>
+                                              </div>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'raterId')}`}>
+                                              <div className="font-bold text-slate-700">{projected.raterId ? getRaterName(projected.raterId) : "Unassigned"}</div>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'seniorRaterId')}`}>
+                                              <div className="font-bold text-slate-700">{projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned"}</div>
+                                            </td>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'reviewerId')}`}>
+                                              <div className="font-bold text-slate-700">{projected.reviewerId ? getRaterName(projected.reviewerId) : "Unassigned"}</div>
+                                            </td>
+                                            <td className={`px-3 py-3 text-center ${getDiffClass(r, projected, 'ncoerStatus')}`}>
+                                              {(() => {
+                                                const projCurrent = findCurrentRecord(projected);
+                                                return projCurrent.ncoerStatus ? (
+                                                  <span className="px-2 py-0.5 bg-blue-600 text-white rounded text-[9px] font-bold uppercase">{projCurrent.ncoerStatus}</span>
+                                                ) : (
+                                                  <span className="text-slate-300 italic">None</span>
+                                                );
+                                              })()}
+                                            </td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {recordHistory.map((hist, hIdx) => (
+                                <div key={hist.id || hist.historyId || `hist-${hIdx}`} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md">
+                                  <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-2.5 h-2.5 rounded-full ${hIdx === 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}></div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm mr-1">
+                                          <CalendarPlus className="w-3 h-3 text-slate-400" />
+                                          <span className="text-[10px] font-mono font-bold text-slate-600">
+                                            {formatSnapshotDate(hist.snapshotAt)}
+                                          </span>
+                                        </div>
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${hIdx === 0 ? "text-emerald-700" : "text-slate-500"}`}>
+                                          {hIdx === 0 ? "Latest Snapshot" : `Previous Version (${recordHistory.length - hIdx})`}
+                                        </span>
+                                        {hist.isRestoration && (
+                                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[8px] font-black uppercase tracking-tighter border border-amber-200">
+                                            Restoration Point
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setHistoryConfirm({
+                                            isOpen: true,
+                                            title: "Restore History Snapshot",
+                                            message: "Restore this record to this historical state? The current version will be saved to history first.",
+                                            confirmLabel: "RESTORE SNAPSHOT",
+                                            cancelLabel: "CANCEL",
+                                            variant: "question",
+                                            onConfirm: async () => {
+                                              try {
+                                                await restoreRecordHistory(r.id, hist);
+                                                setHistoryConfirm({
+                                                  isOpen: true,
+                                                  title: "Success",
+                                                  message: "Version restored successfully.",
+                                                  confirmLabel: "OK",
+                                                  cancelLabel: "Close",
+                                                  variant: "info",
+                                                  onConfirm: () => setHistoryConfirm(null)
+                                                });
+                                              } catch (err: any) {
+                                                console.error("Failed to restore history:", err);
+                                                setHistoryConfirm({
+                                                  isOpen: true,
+                                                  title: "Restoration Failed",
+                                                  message: `Restoration failed: ${err.message}`,
+                                                  confirmLabel: "OK",
+                                                  cancelLabel: "Close",
+                                                  variant: "danger",
+                                                  onConfirm: () => setHistoryConfirm(null)
+                                                });
+                                              }
+                                            }
+                                          });
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 text-[10px] font-bold rounded border border-emerald-200 transition-all uppercase tracking-tight shadow-sm cursor-pointer hover:border-emerald-300"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        Restore
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setHistoryConfirm({
+                                            isOpen: true,
+                                            title: "Delete History Snapshot",
+                                            message: "PERMANENTLY delete this history snapshot? This cannot be undone.",
+                                            confirmLabel: "DELETE SNAPSHOT",
+                                            cancelLabel: "CANCEL",
+                                            variant: "danger",
+                                            onConfirm: async () => {
+                                              try {
+                                                const hId = hist.id || (hist as any).historyId;
+                                                if (!hId) throw new Error("History ID not found");
+                                                await deleteHistoryRecord(r.id, hId);
+                                                setHistoryConfirm({
+                                                  isOpen: true,
+                                                  title: "Success",
+                                                  message: "Snapshot deleted successfully.",
+                                                  confirmLabel: "OK",
+                                                  cancelLabel: "Close",
+                                                  variant: "info",
+                                                  onConfirm: () => setHistoryConfirm(null)
+                                                });
+                                              } catch (err: any) {
+                                                console.error("Failed to delete history snapshot:", err);
+                                                setHistoryConfirm({
+                                                  isOpen: true,
+                                                  title: "Deletion Failed",
+                                                  message: `Deletion failed: ${err.message}`,
+                                                  confirmLabel: "OK",
+                                                  cancelLabel: "Close",
+                                                  variant: "danger",
+                                                  onConfirm: () => setHistoryConfirm(null)
+                                                });
+                                              }
+                                            }
+                                          });
+                                        }}
+                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
+                                        title="Delete Snapshot"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="overflow-x-auto scrollbar-thin">
+                                    <table className="w-full text-left text-[10px] border-collapse bg-slate-50/10">
+                                      <thead>
+                                        <tr className="bg-slate-50/50 text-[9px] text-slate-400 font-bold uppercase tracking-tighter border-b border-slate-100">
+                                          <th className="px-3 py-2 border-r border-slate-100">Name</th>
+                                          <th className="px-3 py-2 border-r border-slate-100 text-center">Rank</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Element</th>
+                                          <th className="px-3 py-2 border-r border-slate-100 text-center">MOSC</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Duty Title</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Rating Dates</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Rater</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Senior Rater</th>
+                                          <th className="px-3 py-2 border-r border-slate-100">Reviewer</th>
+                                          <th className="px-3 py-2 text-center">NCOER Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        <tr className="hover:bg-slate-50/50 transition-colors">
+                                          <td className={`px-3 py-3 border-r border-slate-100 font-bold text-slate-800 ${getDiffClass(r, hist, 'name')}`}>
+                                            {hist.name}
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 text-center ${getDiffClass(r, hist, 'rank')}`}>
+                                            <span className="px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono font-bold">{hist.rank}</span>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 text-slate-600 font-medium ${getDiffClass(r, hist, 'element')}`}>
+                                            {hist.element}
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 text-center ${getDiffClass(r, hist, 'dutyMosc')}`}>
+                                            <span className="px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200 text-amber-800 font-mono font-bold">{hist.dutyMosc}</span>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, hist, 'role')}`}>
+                                            <span className="text-[10px] font-medium text-slate-700">{hist.role}</span>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 font-mono text-slate-500 ${getDiffClass(r, hist, 'from') || getDiffClass(r, hist, 'thru')}`}>
+                                            <div className="flex flex-col leading-tight">
+                                              <span>F: {hist.from}</span>
+                                              <span>T: {hist.thru}</span>
+                                            </div>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, hist, 'raterId')}`}>
+                                            <div className="font-bold text-slate-700">{hist.raterId ? getRaterName(hist.raterId) : "Unassigned"}</div>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, hist, 'seniorRaterId')}`}>
+                                            <div className="font-bold text-slate-700">{hist.seniorRaterId ? getRaterName(hist.seniorRaterId) : "Unassigned"}</div>
+                                          </td>
+                                          <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, hist, 'reviewerId')}`}>
+                                            <div className="font-bold text-slate-700">{hist.reviewerId ? getRaterName(hist.reviewerId) : "Unassigned"}</div>
+                                          </td>
+                                          <td className={`px-3 py-3 text-center ${getDiffClass(r, hist, 'ncoerStatus')}`}>
+                                            {hist.ncoerStatus ? (
+                                              <span className="px-2 py-0.5 bg-slate-800 text-white rounded text-[9px] font-bold uppercase">{hist.ncoerStatus}</span>
+                                            ) : (
+                                              <span className="text-slate-300 italic">None</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                   );
                 })
               )}
@@ -2105,6 +2628,132 @@ export default function RatingTable({
         </div>
       )}
 
+      {/* Shift to Next Year Prompt Modal */}
+      {lateShiftPromptRecord && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-amber-100 rounded-full">
+                  <CalendarPlus className="w-6 h-6 text-amber-600" />
+                </div>
+                <h3 className="font-black uppercase tracking-tight text-sm text-slate-800">Shift to Next Year</h3>
+              </div>
+              
+              <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1.5 ml-1">Current Record</p>
+                <div className="flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
+                    {lateShiftPromptRecord.rank}
+                  </span>
+                  <p className="font-bold text-slate-900 text-sm leading-tight">{lateShiftPromptRecord.name}</p>
+                </div>
+                <p className="text-xs text-slate-500 font-medium mt-1">{lateShiftPromptRecord.role}</p>
+              </div>
+
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-6">
+                <div className="flex gap-2">
+                  <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-900 font-medium leading-relaxed">
+                    Has the NCOER for the current rating period ({lateShiftPromptRecord.from} to {lateShiftPromptRecord.thru}) been <strong className="font-black text-amber-600 underline">SUBMITTED TO HQDA</strong>?
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => confirmShiftYear(lateShiftPromptRecord, false)}
+                  className="w-full py-2.5 bg-white border-2 border-amber-500 text-amber-600 hover:bg-amber-50 font-black text-[11px] rounded-lg transition-all uppercase tracking-widest shadow-sm flex items-center justify-center gap-2"
+                >
+                  NO, ADD LATE BADGE & SHIFT
+                </button>
+                <button
+                  onClick={() => confirmShiftYear(lateShiftPromptRecord, true)}
+                  className="w-full py-2.5 bg-amber-600 text-white hover:bg-amber-700 font-black text-[11px] rounded-lg transition-all uppercase tracking-widest shadow-lg flex items-center justify-center gap-2"
+                >
+                  YES, RESET STATUS & SHIFT
+                </button>
+                <button
+                  onClick={() => setLateShiftPromptRecord(null)}
+                  className="w-full py-2 bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold text-[10px] rounded-lg transition-all uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Late NCOER Modal */}
+      {manualLateRecord && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-amber-100 rounded-full">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <h3 className="font-black uppercase tracking-tight text-sm text-slate-800">Add Late NCOER</h3>
+              </div>
+              
+              <p className="text-xs text-slate-600 mb-6 leading-relaxed font-medium">
+                Enter the <strong className="font-bold text-slate-900 underline">THRU DATE</strong> for the late NCOER. The HQDA due date will be automatically calculated (+90 days).
+              </p>
+
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Historical Thru Date</label>
+                  <input
+                    type="date"
+                    value={manualLateThru}
+                    onChange={(e) => setManualLateThru(e.target.value)}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none"
+                  />
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Calculated HQDA Due</p>
+                  <p className="text-sm font-mono font-bold text-rose-600 mt-0.5">
+                    {manualLateThru ? add90Days(manualLateThru) : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setManualLateRecord(null)}
+                  className="flex-1 py-2 bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold text-[10px] rounded-lg transition-all uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveManualLate}
+                  disabled={!manualLateThru}
+                  className="flex-1 py-2 bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-black text-[10px] rounded-lg transition-all uppercase tracking-widest shadow-md"
+                >
+                  SAVE LATE ENTRY
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {historyConfirm && (
+        <ConfirmDialog
+          isOpen={historyConfirm.isOpen}
+          title={historyConfirm.title}
+          message={historyConfirm.message}
+          confirmLabel={historyConfirm.confirmLabel}
+          cancelLabel={historyConfirm.cancelLabel}
+          onConfirm={() => {
+            historyConfirm.onConfirm();
+            setHistoryConfirm(null);
+          }}
+          onCancel={() => setHistoryConfirm(null)}
+          variant={historyConfirm.variant}
+        />
+      )}
     </div>
   );
 }

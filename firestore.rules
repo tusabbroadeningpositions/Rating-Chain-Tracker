@@ -18,7 +18,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function incoming() {
@@ -48,7 +48,7 @@ service cloud.firestore {
 
     function isValidArmyRatingRecord(data) {
       return data.keys().hasAll(['id', 'schemeId', 'userId', 'element', 'rank', 'name', 'role']) &&
-             data.keys().size() <= 30 &&
+             data.keys().size() <= 35 &&
              data.id is string && data.id.size() <= 128 &&
              data.schemeId is string && data.schemeId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
@@ -71,6 +71,9 @@ service cloud.firestore {
              (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
              (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
              (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
+             (!data.keys().hasAny(['isLateMode']) || data.isLateMode is bool) &&
+             (!data.keys().hasAny(['priorThru']) || data.priorThru == null || (data.priorThru is string && data.priorThru.size() <= 100)) &&
+             (!data.keys().hasAny(['priorDueHqda']) || data.priorDueHqda == null || (data.priorDueHqda is string && data.priorDueHqda.size() <= 100)) &&
              (!data.keys().hasAny(['isCustomStatus']) || data.isCustomStatus is bool) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
@@ -149,11 +152,18 @@ service cloud.firestore {
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
                         'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
-                        'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isCustomStatus', 'updatedAt'
+                        'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
+                        'priorThru', 'priorDueHqda', 'isCustomStatus', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
                     );
                     
       allow delete: if isValidId(recordId) && isSchemeEditable(resource.data.schemeId);
+
+      match /history/{historyId} {
+        allow read: if isSchemeReadable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
+        allow create: if isSchemeEditable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
+        allow delete: if isSchemeEditable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
+      }
     }
   }
 }

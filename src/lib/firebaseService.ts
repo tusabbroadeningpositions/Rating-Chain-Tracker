@@ -10,7 +10,9 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
-  updateDoc
+  updateDoc,
+  orderBy,
+  addDoc
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { ArmyRatingRecord, RatingScheme } from "../types";
@@ -18,6 +20,7 @@ import { INITIAL_RECORDS } from "../sampleData";
 
 export const SCHEMES_COL = "schemes";
 export const RECORDS_COL = "records";
+export const HISTORY_COL = "history";
 
 // --- REQUIRED ERROR HANDLING ENUMS AND INTERFACES ---
 
@@ -239,11 +242,22 @@ export function subscribeToRecords(
 export async function saveRecord(record: ArmyRatingRecord, userId: string, schemeId: string): Promise<void> {
   const path = `${RECORDS_COL}/${record.id}`;
   try {
-    await setDoc(doc(db, RECORDS_COL, record.id), {
+    const recordRef = doc(db, RECORDS_COL, record.id);
+    const updateData = {
       ...record,
       userId,
       schemeId,
       updatedAt: serverTimestamp()
+    };
+    
+    await setDoc(recordRef, updateData);
+
+    // Save to history sub-collection
+    const historyRef = doc(collection(recordRef, HISTORY_COL));
+    await setDoc(historyRef, {
+      ...updateData,
+      historyId: historyRef.id,
+      snapshotAt: serverTimestamp()
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -298,12 +312,22 @@ export async function batchSaveRecords(records: ArmyRatingRecord[], userId: stri
   const batch = writeBatch(db);
   try {
     records.forEach(record => {
-      const ref = doc(db, RECORDS_COL, record.id);
-      batch.set(ref, {
+      const recordRef = doc(db, RECORDS_COL, record.id);
+      const updateData = {
         ...record,
         userId,
         schemeId,
         updatedAt: serverTimestamp()
+      };
+      
+      batch.set(recordRef, updateData);
+
+      // Save to history sub-collection
+      const historyRef = doc(collection(recordRef, HISTORY_COL));
+      batch.set(historyRef, {
+        ...updateData,
+        historyId: historyRef.id,
+        snapshotAt: serverTimestamp()
       });
     });
     await batch.commit();
@@ -428,6 +452,56 @@ export async function createDefaultScheme(userId: string): Promise<string> {
   }
 }
 
+export function subscribeToRecordHistory(
+  recordId: string,
+  onUpdate: (history: any[]) => void
+) {
+  const q = query(
+    collection(db, RECORDS_COL, recordId, HISTORY_COL),
+    orderBy("updatedAt", "desc")
+  );
+  
+  return onSnapshot(q, (snapshot) => {
+    const history = snapshot.docs.map(d => ({
+      ...d.data(),
+      id: d.id,
+      parentRecordId: recordId,
+      isHistoryEntry: true,
+      snapshotAt: d.data().snapshotAt?.toMillis?.() || Date.now()
+    }));
+    // Sort descending by snapshotAt
+    history.sort((a, b) => b.snapshotAt - (a as any).snapshotAt);
+    onUpdate(history);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.LIST, `${RECORDS_COL}/${recordId}/${HISTORY_COL}`);
+  });
+}
+
+export async function deleteHistoryRecord(recordId: string, historyId: string): Promise<void> {
+  if (!recordId || !historyId) throw new Error("Missing recordId or historyId");
+  const path = `${RECORDS_COL}/${recordId}/${HISTORY_COL}/${historyId}`;
+  try {
+    await deleteDoc(doc(db, RECORDS_COL, recordId, HISTORY_COL, historyId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+}
+
+export async function updateHistoryRecord(recordId: string, historyId: string, data: Partial<ArmyRatingRecord>): Promise<void> {
+  const path = `${RECORDS_COL}/${recordId}/${HISTORY_COL}/${historyId}`;
+  try {
+    const { id, parentRecordId, isHistoryEntry, updatedAt, snapshotAt, historyId: hId, ...updateData } = data as any;
+    await updateDoc(doc(db, RECORDS_COL, recordId, HISTORY_COL, historyId), {
+      ...updateData,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+    throw error;
+  }
+}
+
 export async function copyVersion(
   userId: string,
   schemeId: string,
@@ -480,10 +554,50 @@ export async function copyVersion(
         schemeId,
         updatedAt: serverTimestamp()
       });
+
+      if (toVersion === "current") {
+        const historyRef = doc(collection(ref, HISTORY_COL));
+        batch.set(historyRef, {
+          ...clonedRecord,
+          userId,
+          schemeId,
+          historyId: historyRef.id,
+          snapshotAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          isCopyAction: true
+        });
+      }
     });
 
     await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, RECORDS_COL);
+  }
+}
+
+export async function restoreRecordHistory(recordId: string, historyData: any): Promise<void> {
+  const { historyId, snapshotAt, id: histId, parentRecordId, isHistoryEntry, updatedAt, ...rest } = historyData;
+  const recordRef = doc(db, RECORDS_COL, recordId);
+  try {
+    // Save current as history before restoring
+    const currentSnap = await getDoc(recordRef);
+    if (currentSnap.exists()) {
+      const historyColRef = collection(recordRef, HISTORY_COL);
+      await addDoc(historyColRef, {
+        ...currentSnap.data(),
+        snapshotAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    // Restore
+    await setDoc(recordRef, {
+      ...rest,
+      id: recordId,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${RECORDS_COL}/${recordId}`);
+    throw error;
   }
 }

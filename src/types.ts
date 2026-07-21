@@ -32,6 +32,8 @@ export interface RatingScheme {
 
 export interface ArmyRatingRecord {
   id: string;
+  userId?: string;
+  schemeId?: string;
   element: string; // e.g. Brass, Woodwinds, Percussion, Command
   dutyMosc: string; // Duty MOSC (e.g. 42R, 42S)
   rank: string; // Rank (e.g. MAJ, SGM, SFC, SSG, SGT, SPC, CPL, PFC)
@@ -51,7 +53,12 @@ export interface ArmyRatingRecord {
   version?: "current" | "future" | "alternate"; // Version profile draft
   ncoerStatus?: string; // NCOER Status
   ncoerStatusDate?: string; // NCOER Status change date/timestamp (YYYY-MM-DD)
+  priorThru?: string; // Prior Thru Date for late mode
+  priorDueHqda?: string; // Prior Due to HQDA Date for late mode
   isCustomStatus?: boolean; // Flag if status is custom
+  parentRecordId?: string; // If this is a history entry, the ID of the parent record
+  isHistoryEntry?: boolean; // Flag if this is a history entry
+  updatedAt?: any; // Firestore timestamp or number
 }
 
 export interface OrgNode {

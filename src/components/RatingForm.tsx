@@ -6,10 +6,12 @@
 import React, { useState, useEffect } from "react";
 import { ArmyRatingRecord, RatingRole } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
+import { add90Days, calculateThruDate } from "../utils/dateUtils";
 import { Plus, Check, X, RotateCcw } from "lucide-react";
 
 interface RatingFormProps {
   records: ArmyRatingRecord[];
+  allRecords?: ArmyRatingRecord[];
   onSave: (record: ArmyRatingRecord) => void;
   onCancel: () => void;
   editingRecord: ArmyRatingRecord | null;
@@ -18,39 +20,7 @@ interface RatingFormProps {
 const COMMON_RANKS = ["SSG", "SFC", "MSG", "SGM", "1LT", "2LT", "CPT", "MAJ", "LTC", "COL"];
 const COMMON_ELEMENTS = ["Ceremonial", "Chorus", "Concert", "Popular", "Strings", "Support"];
 
-// Helper to add exactly 90 days to a date string (YYYY-MM-DD)
-function add90Days(dateStr: string): string {
-  if (!dateStr) return "";
-  try {
-    const date = new Date(dateStr + "T12:00:00");
-    if (isNaN(date.getTime())) return "";
-    date.setDate(date.getDate() + 90);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  } catch (e) {
-    return "";
-  }
-}
-
-// Helper to calculate THRU date (365 days inclusive, which is fromDate + 364 days)
-function calculateThruDate(fromDateStr: string): string {
-  if (!fromDateStr) return "";
-  try {
-    const date = new Date(fromDateStr + "T12:00:00");
-    if (isNaN(date.getTime())) return "";
-    date.setDate(date.getDate() + 364);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  } catch (e) {
-    return "";
-  }
-}
-
-export default function RatingForm({ records, onSave, onCancel, editingRecord }: RatingFormProps) {
+export default function RatingForm({ records, allRecords, onSave, onCancel, editingRecord }: RatingFormProps) {
   const [name, setName] = useState("");
   const [rank, setRank] = useState("SSG");
   const [dutyMosc, setDutyMosc] = useState("42S3O");
@@ -83,11 +53,25 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       setKeyLeaderTitle(editingRecord.keyLeaderTitle || "");
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
-      setDueHqdaDate(editingRecord.dueHqda);
-      setNcoerStatus(editingRecord.ncoerStatus || "");
-      setNcoerStatusDate(editingRecord.ncoerStatusDate || "");
-      setIsCustomStatus(!!editingRecord.isCustomStatus);
-      setCustomStatusText(editingRecord.isCustomStatus ? editingRecord.ncoerStatus || "" : "");
+      // Auto-populate dueHqda if it's blank but thru is present
+      setDueHqdaDate(editingRecord.dueHqda || add90Days(editingRecord.thru));
+      
+      // Mirror NCOER status of current view
+      const getRecordForNcoerStatus = () => {
+        if (!editingRecord) return editingRecord;
+        if ((editingRecord.version || "current") === "current") return editingRecord;
+        const searchSource = allRecords || records || [];
+        return searchSource.find(cr => 
+          (cr.version || "current") === "current" && 
+          cr.name.trim().toLowerCase() === editingRecord.name.trim().toLowerCase()
+        ) || editingRecord;
+      };
+
+      const ncoerRecordToUse = getRecordForNcoerStatus() || editingRecord;
+      setNcoerStatus(ncoerRecordToUse.ncoerStatus || "");
+      setNcoerStatusDate(ncoerRecordToUse.ncoerStatusDate || "");
+      setIsCustomStatus(!!ncoerRecordToUse.isCustomStatus);
+      setCustomStatusText(ncoerRecordToUse.isCustomStatus ? ncoerRecordToUse.ncoerStatus || "" : "");
       
       const clean = (s: string) => s.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
       const findIdByName = (val: string) => {
@@ -119,9 +103,11 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       // Default to 1-year dates or relevant dates
       const today = new Date();
       const currentYear = today.getFullYear();
-      setFromDate(`${currentYear}-06-01`);
-      setThruDate(`${currentYear + 1}-02-01`);
-      setDueHqdaDate(`${currentYear + 1}-05-02`); // 90 days after Feb 1st
+      const defaultFrom = `${currentYear}-06-01`;
+      const defaultThru = `${currentYear + 1}-02-01`;
+      setFromDate(defaultFrom);
+      setThruDate(defaultThru);
+      setDueHqdaDate(add90Days(defaultThru));
       
       setRaterId("");
       setRaterEffectiveDate("");
@@ -172,10 +158,37 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
     .filter(r => !editingRecord || r.id !== editingRecord.id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
+  const isProjected = editingRecord?.version === "future";
+  const isAlternate = editingRecord?.version === "alternate";
+
   return (
-    <form id="rating-form" onSubmit={handleSubmit} className="bg-white rounded border border-slate-200 p-5 space-y-5 shadow-sm">
-      <div className="flex justify-between items-center pb-3 border-b border-slate-200 bg-slate-50 p-3 -mx-5 -mt-5 rounded-t">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+    <form 
+      id="rating-form" 
+      onSubmit={handleSubmit} 
+      className={`rounded border p-5 space-y-5 shadow-sm transition-all ${
+        isProjected 
+          ? "bg-blue-50 border-blue-300" 
+          : isAlternate 
+            ? "bg-emerald-50 border-emerald-300" 
+            : "bg-white border-slate-200"
+      }`}
+    >
+      <div className={`flex justify-between items-center pb-3 border-b p-3 -mx-5 -mt-5 rounded-t ${
+        isProjected 
+          ? "bg-blue-100/50 border-blue-200" 
+          : isAlternate 
+            ? "bg-emerald-100/50 border-emerald-200" 
+            : "bg-slate-50 border-slate-200"
+      }`}>
+        <h3 className={`text-xs font-bold uppercase tracking-widest flex items-center ${
+          isProjected 
+            ? "text-blue-700" 
+            : isAlternate 
+              ? "text-emerald-700" 
+              : "text-slate-500"
+        }`}>
+          {isProjected && <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[8px] mr-2">PROJECTED</span>}
+          {isAlternate && <span className="bg-emerald-600 text-white px-1.5 py-0.5 rounded text-[8px] mr-2">ALTERNATE</span>}
           {editingRecord ? "Edit Rating Profile Record" : "Create New Rating Profile"}
         </h3>
         <button
@@ -420,7 +433,7 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-medium text-slate-500 uppercase">Evaluation Due Date</label>
+            <label className="text-[10px] font-medium text-slate-500 uppercase">HQDA Due Date</label>
             <input
               id="input-due-hqda"
               type="date"
@@ -470,7 +483,7 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
       {/* NCOER Status Tracking */}
       <div className="border-t border-slate-200 pt-3 space-y-2">
         <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">NCOER Status Tracking</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <div className="space-y-1">
             <label className="text-[10px] font-medium text-slate-500 uppercase">NCOER Status</label>
             <div className="flex flex-col gap-1.5">
@@ -519,18 +532,6 @@ export default function RatingForm({ records, onSave, onCancel, editingRecord }:
                 />
               )}
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-slate-500 uppercase">Status Date / Timestamp</label>
-            <input
-              id="input-ncoer-status-date"
-              type="date"
-              value={ncoerStatusDate}
-              onChange={(e) => setNcoerStatusDate(e.target.value)}
-              className="w-full px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
-            />
-            <p className="text-[9px] text-slate-400">Date the NCOER Status was updated or set.</p>
           </div>
         </div>
       </div>

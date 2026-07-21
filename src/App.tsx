@@ -30,7 +30,8 @@ import {
   createDefaultScheme,
   toggleSchemeEdit,
   copyVersion,
-  updateSchemeDates
+  updateSchemeDates,
+  updateHistoryRecord
 } from "./lib/firebaseService";
 import { Share2, Link, Globe, Lock, CheckCircle2 } from "lucide-react";
 
@@ -349,7 +350,45 @@ export default function App() {
     }
     
     if (activeSchemeId && canEdit) {
-      await saveRecord(recordWithVersion, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
+      if (recordWithVersion.isHistoryEntry && recordWithVersion.parentRecordId) {
+        // This is a history entry (e.g. Projected version being edited from history)
+        await updateHistoryRecord(recordWithVersion.parentRecordId, recordWithVersion.id, recordWithVersion);
+        
+        // Also, if it's a "future" version, try to find a matching record in main collection to keep them in sync
+        if (recordWithVersion.version === "future") {
+          const mainProjected = records.find(r => 
+            r.version === "future" && 
+            r.name === recordWithVersion.name && 
+            r.id !== recordWithVersion.parentRecordId
+          );
+          if (mainProjected) {
+            await saveRecord({ ...recordWithVersion, id: mainProjected.id, isHistoryEntry: false, parentRecordId: undefined }, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
+          }
+        }
+      } else {
+        await saveRecord(recordWithVersion, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
+        
+        // Sync NCOER status fields across all versions of this soldier in Firebase
+        const searchName = recordWithVersion.name.trim().toLowerCase();
+        const ncoerFields = {
+          ncoerStatus: recordWithVersion.ncoerStatus,
+          isCustomStatus: recordWithVersion.isCustomStatus,
+          ncoerStatusDate: recordWithVersion.ncoerStatusDate,
+          priorThru: recordWithVersion.priorThru,
+          priorDueHqda: recordWithVersion.priorDueHqda
+        };
+        const matchesToSync = records.filter(r => 
+          r.id !== recordWithVersion.id && 
+          r.name.trim().toLowerCase() === searchName
+        );
+        if (matchesToSync.length > 0) {
+          const syncedRecords = matchesToSync.map(r => ({
+            ...r,
+            ...ncoerFields
+          }));
+          await batchSaveRecords(syncedRecords, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
+        }
+      }
     } else if (!activeSchemeId) {
       const exists = records.some(r => r.id === record.id);
       let updated: ArmyRatingRecord[];
@@ -358,6 +397,23 @@ export default function App() {
       } else {
         updated = [...records, recordWithVersion];
       }
+      
+      // Sync NCOER status fields across all versions of this soldier in Guest Mode
+      const searchName = recordWithVersion.name.trim().toLowerCase();
+      const ncoerFields = {
+        ncoerStatus: recordWithVersion.ncoerStatus,
+        isCustomStatus: recordWithVersion.isCustomStatus,
+        ncoerStatusDate: recordWithVersion.ncoerStatusDate,
+        priorThru: recordWithVersion.priorThru,
+        priorDueHqda: recordWithVersion.priorDueHqda
+      };
+      updated = updated.map(r => {
+        if (r.id !== recordWithVersion.id && r.name.trim().toLowerCase() === searchName) {
+          return { ...r, ...ncoerFields };
+        }
+        return r;
+      });
+
       setRecords(updated);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     }
@@ -875,7 +931,7 @@ export default function App() {
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Future
+                    Projected
                     {records.filter(r => r.version === "future").length > 0 && (
                       <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full" />
                     )}
@@ -921,8 +977,8 @@ export default function App() {
                       onClick={() => {
                         setConfirmConfig({
                           isOpen: true,
-                          title: "Copy Future into ALTERNATE",
-                          message: "This will overwrite all existing records in the ALTERNATE version with a complete copy of the FUTURE version. Are you sure?",
+                          title: "Copy Projected into ALTERNATE",
+                          message: "This will overwrite all existing records in the ALTERNATE version with a complete copy of the PROJECTED version. Are you sure?",
                           confirmLabel: "COPY AND OVERWRITE",
                           cancelLabel: "CANCEL",
                           variant: "warning",
@@ -932,7 +988,7 @@ export default function App() {
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded border border-slate-300 transition-all uppercase tracking-tight"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                      Copy Future Version Data
+                      Copy Projected Version Data
                     </button>
                   )}
 
@@ -967,7 +1023,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0 animate-bounce" />
                   <span>
-                    The <strong className="uppercase font-bold">{selectedVersion}</strong> draft version is currently empty. Copy the Current version's active roster{selectedVersion === "alternate" ? " or the Future draft" : ""} to populate it instantly and start modeling modifications!
+                    The <strong className="uppercase font-bold">{selectedVersion === "future" ? "projected" : selectedVersion}</strong> draft version is currently empty. Copy the Current version's active roster{selectedVersion === "alternate" ? " or the Projected draft" : ""} to populate it instantly and start modeling modifications!
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -982,7 +1038,7 @@ export default function App() {
                       onClick={() => handleCopyVersion("future", "alternate")}
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-xs uppercase tracking-tight shadow-sm transition-all whitespace-nowrap self-start sm:self-center"
                     >
-                      Copy Future Version
+                      Copy Projected Version
                     </button>
                   )}
                 </div>
@@ -994,10 +1050,11 @@ export default function App() {
               
               {/* Form Modal overlay */}
               {isFormOpen && (
-                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-50 overflow-y-auto animate-fade-in print:hidden">
+                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[100] overflow-y-auto animate-fade-in print:hidden">
                   <div className="w-full max-w-3xl">
                     <RatingForm
                       records={filteredRecords}
+                      allRecords={records}
                       onSave={handleSaveRecord}
                       onCancel={handleFormCancel}
                       editingRecord={editingRecord}
@@ -1072,7 +1129,7 @@ export default function App() {
       )}
 
       {pendingRaterChange && (
-        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-center p-4 z-[60] overflow-y-auto animate-fade-in print:hidden">
+        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-center p-4 z-[110] overflow-y-auto animate-fade-in print:hidden">
           <div className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
             {/* Header */}
             <div className="bg-amber-500 px-5 py-4 flex items-center gap-3 text-slate-900">

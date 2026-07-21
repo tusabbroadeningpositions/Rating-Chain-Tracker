@@ -125,6 +125,10 @@
           "type": "string",
           "description": "Principal Duty Title / Role in the organization."
         },
+        "keyLeaderTitle": {
+          "type": "string",
+          "description": "Custom title for key leader positions."
+        },
         "version": {
           "type": "string",
           "description": "Version profile draft (e.g., current, future, alternate)."
@@ -136,6 +140,18 @@
         "ncoerStatusDate": {
           "type": "string",
           "description": "NCOER Status change date (YYYY-MM-DD)."
+        },
+        "isLateMode": {
+          "type": "boolean",
+          "description": "Flag if record is in 'Late' mode for NCOER."
+        },
+        "priorThru": {
+          "type": "string",
+          "description": "Prior Thru Date for late mode (YYYY-MM-DD)."
+        },
+        "priorDueHqda": {
+          "type": "string",
+          "description": "Prior Due to HQDA Date for late mode (YYYY-MM-DD)."
         },
         "isCustomStatus": {
           "type": "boolean",
@@ -156,7 +172,35 @@
     },
     "/records/{recordId}": {
       "schema": "ArmyRatingRecord",
-      "description": "Collection of individual rating records within rating schemes."
+      "description": "Collection of individual rating records within rating schemes.",
+      "subcollections": {
+        "history": {
+          "description": "Historical snapshots of the record.",
+          "fields": {
+            "historyId": { "type": "string" },
+            "snapshotAt": { "type": "object" },
+            "userId": { "type": "string" },
+            "schemeId": { "type": "string" },
+            "element": { "type": "string" },
+            "dutyMosc": { "type": "string" },
+            "rank": { "type": "string" },
+            "name": { "type": "string" },
+            "from": { "type": "string" },
+            "thru": { "type": "string" },
+            "dueHqda": { "type": "string" },
+            "raterId": { "type": "string" },
+            "seniorRaterId": { "type": "string" },
+            "reviewerId": { "type": "string" },
+            "submissionType": { "type": "string" },
+            "role": { "type": "string" },
+            "ncoerStatus": { "type": "string" },
+            "ncoerStatusDate": { "type": "string" },
+            "isCustomStatus": { "type": "boolean" },
+            "version": { "type": "string" },
+            "updatedAt": { "type": "object" }
+          }
+        }
+      }
     }
   }
 }

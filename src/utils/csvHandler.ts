@@ -4,6 +4,7 @@
  */
 
 import { ArmyRatingRecord, RatingRole } from "../types";
+import { add90Days } from "./dateUtils";
 
 /**
  * Autodetects the role based on Rank, Duty Title, and Duty MOSC
@@ -446,6 +447,21 @@ export function parseCSV(csvText: string): ArmyRatingRecord[] {
 }
 
 /**
+ * Formats a YYYY-MM-DD date string to M/D/YYYY for export
+ */
+export function formatDateToMDYYYY(dateStr: string | undefined): string {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  
+  const yyyy = parts[0];
+  const mm = parseInt(parts[1], 10);
+  const dd = parseInt(parts[2], 10);
+  
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+/**
  * Generates a template CSV string
  */
 export function generateTemplateCSV(records: ArmyRatingRecord[] = []): string {
@@ -483,15 +499,15 @@ export function generateTemplateCSV(records: ArmyRatingRecord[] = []): string {
         `"${r.dutyMosc}"`,
         `"${r.rank}"`,
         `"${r.name}"`,
-        r.from,
-        r.thru,
-        r.dueHqda,
+        formatDateToMDYYYY(r.from),
+        formatDateToMDYYYY(r.thru),
+        formatDateToMDYYYY(r.dueHqda || add90Days(r.thru)),
         helperGetRecordName(r.raterId),
-        `"${r.raterEffectiveDate || ""}"`,
+        `"${formatDateToMDYYYY(r.raterEffectiveDate)}"`,
         helperGetRecordName(r.seniorRaterId),
-        `"${r.seniorRaterEffectiveDate || ""}"`,
+        `"${formatDateToMDYYYY(r.seniorRaterEffectiveDate)}"`,
         helperGetRecordName(r.reviewerId),
-        `"${r.reviewerEffectiveDate || ""}"`,
+        `"${formatDateToMDYYYY(r.reviewerEffectiveDate)}"`,
         `"${r.submissionType || "ANN"}"`
       ];
       lines.push(row.join(","));
@@ -499,13 +515,13 @@ export function generateTemplateCSV(records: ArmyRatingRecord[] = []): string {
   } else {
     // Add default example row
     lines.push(
-      "Command,\"OIC\",42C00,MAJ,\"Morris, Patrick\",2026-06-01,2027-02-01,2027-03-15,,,,,,,\"ANN\""
+      "Command,\"OIC\",42C00,MAJ,\"Morris, Patrick\",6/1/2026,2/1/2027,3/15/2027,,,,,,,\"ANN\""
     );
     lines.push(
-      "Command,\"Element Leader\",42R6M,SGM,\"Cadle, David\",2026-06-01,2027-02-01,2027-03-15,\"MAJ Morris, Patrick\",,,,,\"ANN\""
+      "Command,\"Element Leader\",42R6M,SGM,\"Cadle, David\",6/1/2026,2/1/2027,3/15/2027,\"MAJ Morris, Patrick\",,,,,\"ANN\""
     );
     lines.push(
-      "Brass Section,\"Group Leader\",42R5H,SFC,\"Smith, John\",2026-06-01,2027-02-01,2027-03-15,\"SGM Cadle, David\",,\"MAJ Morris, Patrick\",,,,\"ANN\""
+      "Brass Section,\"Group Leader\",42R5H,SFC,\"Smith, John\",6/1/2026,2/1/2027,3/15/2027,\"SGM Cadle, David\",,\"MAJ Morris, Patrick\",,,,\"ANN\""
     );
   }
 
