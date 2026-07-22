@@ -17,6 +17,19 @@ interface OrgChartPreviewProps {
   activeSchemeName?: string;
 }
 
+const getVerticalNameClass = (rank: string, name: string) => {
+  const text = `${rank} ${name}`;
+  if (text.length > 20) {
+    return "font-bold text-[6.5px] uppercase tracking-tighter leading-[1.1]";
+  } else if (text.length > 15) {
+    return "font-bold text-[7.5px] uppercase tracking-tight leading-[1.1]";
+  } else if (text.length > 11) {
+    return "font-bold text-[8.5px] uppercase tracking-tight leading-none";
+  } else {
+    return "font-bold text-[9px] uppercase tracking-wider leading-none";
+  }
+};
+
 export default function OrgChartPreview({ 
   records, 
   onEditClick, 
@@ -485,7 +498,7 @@ export default function OrgChartPreview({
                                               }`}
                                             >
                                               <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
-                                                <div className="font-bold text-[9px] uppercase tracking-wider">{l.rank} {l.name}</div>
+                                                <div className={getVerticalNameClass(l.rank, l.name)}>{l.rank} {l.name}</div>
                                                 <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(l)}</div>
                                               </div>
                                             </div>
@@ -509,7 +522,7 @@ export default function OrgChartPreview({
                                                       }`}
                                                     >
                                                       <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
-                                                        <div className="font-bold text-[9px] uppercase tracking-wider">{sub.rank} {sub.name}</div>
+                                                        <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
                                                         <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(sub)}</div>
                                                       </div>
                                                     </div>
@@ -611,7 +624,7 @@ export default function OrgChartPreview({
                                                   }`}
                                                 >
                                                   <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
-                                                    <div className="font-bold text-[9px] uppercase tracking-wider">{leader.rank} {leader.name}</div>
+                                                    <div className={getVerticalNameClass(leader.rank, leader.name)}>{leader.rank} {leader.name}</div>
                                                     <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(leader)}</div>
                                                   </div>
                                                 </div>
@@ -636,7 +649,7 @@ export default function OrgChartPreview({
                                                           }`}
                                                         >
                                                           <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
-                                                            <div className="font-bold text-[9px] uppercase tracking-wider">{sub.rank} {sub.name}</div>
+                                                            <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
                                                             <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(sub)}</div>
                                                           </div>
                                                         </div>
