@@ -1096,6 +1096,9 @@ export default function App() {
               ) : (
                 <OrgChartPreview
                   records={filteredRecords}
+                  allRecords={records}
+                  selectedVersion={selectedVersion}
+                  onChangeVersion={setSelectedVersion}
                   onEditClick={handleEditClick}
                   readOnly={!canEdit}
                   activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}

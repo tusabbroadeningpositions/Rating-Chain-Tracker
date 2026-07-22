@@ -15,6 +15,9 @@ interface OrgChartPreviewProps {
   onEditClick: (record: ArmyRatingRecord) => void;
   readOnly?: boolean;
   activeSchemeName?: string;
+  selectedVersion?: "current" | "future" | "alternate";
+  onChangeVersion?: (version: "current" | "future" | "alternate") => void;
+  allRecords?: ArmyRatingRecord[];
 }
 
 const getVerticalNameClass = (rank: string, name: string) => {
@@ -34,7 +37,10 @@ export default function OrgChartPreview({
   records, 
   onEditClick, 
   readOnly = false,
-  activeSchemeName = "Rating Scheme"
+  activeSchemeName = "Rating Scheme",
+  selectedVersion = "current",
+  onChangeVersion,
+  allRecords = []
 }: OrgChartPreviewProps) {
   const [zoom, setZoom] = useState(0.95);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -287,19 +293,72 @@ export default function OrgChartPreview({
             : "bg-slate-900 rounded p-5 border border-slate-950 overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between"
           }>
             {isFullscreen && (
-              <div className="bg-slate-900 border-b border-slate-800 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10">
+              <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b ${
+                selectedVersion === "future" ? "bg-blue-500 border-blue-600 text-white" : 
+                selectedVersion === "alternate" ? "bg-emerald-500 border-emerald-600 text-white" : 
+                "bg-blue-950 border-blue-900 text-white"
+              }`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                  <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
+                    selectedVersion === "future" ? "bg-amber-400" :
+                    selectedVersion === "alternate" ? "bg-blue-400" :
+                    "bg-emerald-400"
+                  }`}></div>
                   <div>
                     <h2 className="text-xs font-black text-slate-100 tracking-wider uppercase flex items-center gap-2">
                       Visual Org Chart Bubble Map
                     </h2>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-bold uppercase tracking-widest">{activeSchemeName}</p>
+                    <p className="text-[10px] text-slate-300 mt-0.5 font-bold uppercase tracking-widest">{activeSchemeName}</p>
                   </div>
                 </div>
                 
                 {/* Center: Controls */}
                 <div className="flex items-center gap-4">
+                  {/* Version Selection Switcher */}
+                  {onChangeVersion && (
+                    <div className="inline-flex rounded-md bg-black/25 p-0.5 border border-white/10 shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => onChangeVersion("current")}
+                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
+                          selectedVersion === "current"
+                            ? "bg-slate-750 text-white font-black shadow-sm"
+                            : "text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        Current
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChangeVersion("future")}
+                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                          selectedVersion === "future"
+                            ? "bg-amber-600 text-white font-black shadow-sm"
+                            : "text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        <span>Projected</span>
+                        {allRecords?.filter(r => (r.version || "current") === "future").length > 0 && (
+                          <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChangeVersion("alternate")}
+                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                          selectedVersion === "alternate"
+                            ? "bg-blue-600 text-white font-black shadow-sm"
+                            : "text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        <span>Alternate</span>
+                        {allRecords?.filter(r => (r.version || "current") === "alternate").length > 0 && (
+                          <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                        )}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Zoom controls */}
                   <div className="flex items-center gap-1 bg-slate-800 rounded p-1 border border-slate-700">
                     <button
