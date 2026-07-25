@@ -273,6 +273,54 @@ export async function deleteRecord(recordId: string): Promise<void> {
   }
 }
 
+export async function deleteRecordAndCleanLinks(
+  recordIdToDelete: string,
+  allRecords: ArmyRatingRecord[],
+  userId: string,
+  schemeId: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  
+  try {
+    // 1. Clean links in other records
+    const otherRecords = allRecords.filter(r => r.id !== recordIdToDelete);
+    otherRecords.forEach(r => {
+      const needsUpdate = r.raterId === recordIdToDelete || 
+                          r.seniorRaterId === recordIdToDelete || 
+                          r.reviewerId === recordIdToDelete;
+      
+      if (needsUpdate) {
+        const recordRef = doc(db, RECORDS_COL, r.id);
+        const updateData = {
+          ...r,
+          raterId: r.raterId === recordIdToDelete ? "" : r.raterId,
+          seniorRaterId: r.seniorRaterId === recordIdToDelete ? "" : r.seniorRaterId,
+          reviewerId: r.reviewerId === recordIdToDelete ? "" : r.reviewerId,
+          updatedAt: serverTimestamp()
+        };
+        batch.set(recordRef, updateData);
+        
+        // Also save a history entry for the cleaned record
+        const historyRef = doc(collection(recordRef, HISTORY_COL));
+        batch.set(historyRef, {
+          ...updateData,
+          historyId: historyRef.id,
+          snapshotAt: serverTimestamp()
+        });
+      }
+    });
+    
+    // 2. Delete the target record
+    const targetRef = doc(db, RECORDS_COL, recordIdToDelete);
+    batch.delete(targetRef);
+    
+    // 3. Commit atomically
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, RECORDS_COL);
+  }
+}
+
 export async function overwriteSchemeRecords(records: ArmyRatingRecord[], userId: string, schemeId: string): Promise<void> {
   const batch = writeBatch(db);
   

@@ -20,6 +20,7 @@ import {
   subscribeToRecords, 
   saveRecord, 
   deleteRecord as dbDeleteRecord,
+  deleteRecordAndCleanLinks,
   batchSaveRecords,
   deleteScheme,
   renameScheme,
@@ -484,19 +485,10 @@ export default function App() {
       cancelLabel: "KEEP SOLDIER",
       variant: "danger",
       onConfirm: async () => {
-        const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
-        if (activeSchemeId && canEdit) {
-          // In Firebase, we update the links first, then delete
-          const updated = records.filter(r => r.id !== id);
-          const cleaned = updated.map(r => ({
-            ...r,
-            raterId: r.raterId === id ? "" : r.raterId,
-            seniorRaterId: r.seniorRaterId === id ? "" : r.seniorRaterId,
-            reviewerId: r.reviewerId === id ? "" : r.reviewerId
-          }));
-          await batchSaveRecords(cleaned, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
-          await dbDeleteRecord(id);
-        } else if (!activeSchemeId) {
+        try {
+          const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
+          
+          // Immediate UI update for better UX
           const updated = records.filter(r => r.id !== id);
           const cleaned = updated.map(r => ({
             ...r,
@@ -505,7 +497,21 @@ export default function App() {
             reviewerId: r.reviewerId === id ? "" : r.reviewerId
           }));
           setRecords(cleaned);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+
+          if (activeSchemeId && canEdit) {
+            // In Firebase, use the atomic atomic operation
+            await deleteRecordAndCleanLinks(
+              id, 
+              records, 
+              currentScheme?.userId || user?.uid || "guest", 
+              activeSchemeId
+            );
+          } else if (!activeSchemeId) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+          }
+        } catch (error) {
+          console.error("Failed to delete record:", error);
+          // Re-fetch or re-sync if failed? Subscription should handle it if it didn't actually delete
         }
       }
     });
@@ -803,7 +809,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-5 sm:px-6 lg:px-8 space-y-4">
+      <main className="flex-1 max-w-[1800px] w-full mx-auto px-4 py-5 sm:px-6 lg:px-8 space-y-4">
         
         {user && !user.isAnonymous && schemes.length === 0 && !sharedScheme ? (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center space-y-6">
@@ -1050,7 +1056,7 @@ export default function App() {
               
               {/* Form Modal overlay */}
               {isFormOpen && (
-                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[100] overflow-y-auto animate-fade-in print:hidden">
+                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[200] overflow-y-auto animate-fade-in print:hidden">
                   <div className="w-full max-w-3xl">
                     <RatingForm
                       records={filteredRecords}
@@ -1123,8 +1129,8 @@ export default function App() {
           message={confirmConfig.message}
           confirmLabel={confirmConfig.confirmLabel}
           cancelLabel={confirmConfig.cancelLabel}
-          onConfirm={() => {
-            confirmConfig.onConfirm();
+          onConfirm={async () => {
+            await confirmConfig.onConfirm();
             closeConfirm();
           }}
           onCancel={closeConfirm}
@@ -1133,7 +1139,7 @@ export default function App() {
       )}
 
       {pendingRaterChange && (
-        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-center p-4 z-[110] overflow-y-auto animate-fade-in print:hidden">
+        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-center p-4 z-[220] overflow-y-auto animate-fade-in print:hidden">
           <div className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
             {/* Header */}
             <div className="bg-amber-500 px-5 py-4 flex items-center gap-3 text-slate-900">

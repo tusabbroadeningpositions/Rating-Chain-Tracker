@@ -157,6 +157,22 @@
           "type": "boolean",
           "description": "Flag if the status is a custom user-defined string."
         },
+        "corNewRaterId": {
+          "type": "string",
+          "description": "New Rater ID for Change of Rater."
+        },
+        "corEffectiveDate": {
+          "type": "string",
+          "description": "Effective Date for Change of Rater (YYYY-MM-DD)."
+        },
+        "parentRecordId": {
+          "type": "string",
+          "description": "If this is a history entry, the ID of the parent record."
+        },
+        "isHistoryEntry": {
+          "type": "boolean",
+          "description": "Flag if this is a history entry."
+        },
         "updatedAt": {
           "type": "object",
           "description": "Firestore server timestamp representing the last update time."

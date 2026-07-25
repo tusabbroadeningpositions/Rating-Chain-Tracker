@@ -293,15 +293,15 @@ export default function OrgChartPreview({
             : "bg-slate-900 rounded p-5 border border-slate-950 overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between"
           }>
             {isFullscreen && (
-              <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b ${
-                selectedVersion === "future" ? "bg-blue-500 border-blue-600 text-white" : 
-                selectedVersion === "alternate" ? "bg-emerald-500 border-emerald-600 text-white" : 
-                "bg-blue-950 border-blue-900 text-white"
+              <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b shadow-lg ${
+                selectedVersion === "future" ? "bg-amber-600 border-amber-700 text-white" : 
+                selectedVersion === "alternate" ? "bg-blue-600 border-blue-700 text-white" : 
+                "bg-[#1e293b] border-slate-800 text-white"
               }`}>
                 <div className="flex items-center gap-3">
                   <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                    selectedVersion === "future" ? "bg-amber-400" :
-                    selectedVersion === "alternate" ? "bg-blue-400" :
+                    selectedVersion === "future" ? "bg-white" :
+                    selectedVersion === "alternate" ? "bg-white" :
                     "bg-emerald-400"
                   }`}></div>
                   <div>

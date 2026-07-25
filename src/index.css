@@ -17,6 +17,17 @@
     from { transform: translateY(-20px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
   }
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.95; transform: scale(1.01); }
+  }
+
+  --animate-spin-slow: spin-slow 8s linear infinite;
+  --animate-pulse-subtle: pulse-subtle 3s ease-in-out infinite;
 }
 
 @layer utilities {

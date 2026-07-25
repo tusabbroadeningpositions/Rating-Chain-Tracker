@@ -56,7 +56,7 @@ export default function ConfirmDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[100] animate-fade-in print:hidden">
+    <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[250] animate-fade-in print:hidden">
       <div className="bg-white border-2 border-slate-300 rounded shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
         {/* Header */}
         <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-700">

@@ -38,6 +38,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [reviewerId, setReviewerId] = useState("");
   const [reviewerEffectiveDate, setReviewerEffectiveDate] = useState("");
   const [submissionType, setSubmissionType] = useState("ANN");
+  const [corNewRaterId, setCorNewRaterId] = useState("");
+  const [corEffectiveDate, setCorEffectiveDate] = useState("");
   const [ncoerStatus, setNcoerStatus] = useState("");
   const [ncoerStatusDate, setNcoerStatusDate] = useState("");
   const [isCustomStatus, setIsCustomStatus] = useState(false);
@@ -92,6 +94,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setReviewerId(findIdByName(editingRecord.reviewerId));
       setReviewerEffectiveDate(editingRecord.reviewerEffectiveDate || "");
       setSubmissionType(editingRecord.submissionType || "ANN");
+      setCorNewRaterId(editingRecord.corNewRaterId || "");
+      setCorEffectiveDate(editingRecord.corEffectiveDate || "");
     } else {
       // Set defaults for a new record
       setName("");
@@ -144,6 +148,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       reviewerId,
       reviewerEffectiveDate,
       submissionType,
+      corNewRaterId: submissionType === "COR" ? corNewRaterId : "",
+      corEffectiveDate: submissionType === "COR" ? corEffectiveDate : "",
       role,
       keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : "",
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
@@ -481,6 +487,42 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
             </div>
           </div>
         </div>
+
+        {/* Change of Rater (COR) Specific Fields */}
+        {submissionType === "COR" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 p-3 bg-amber-50/50 border border-amber-100 rounded animate-fade-in">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
+                New Rater (After COR)
+              </label>
+              <select
+                id="select-cor-new-rater"
+                value={corNewRaterId}
+                onChange={(e) => setCorNewRaterId(e.target.value)}
+                className="w-full px-3 py-1.5 border border-amber-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white"
+              >
+                <option value="">-- Select New Rater --</option>
+                {availableRaters.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({r.rank})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">
+                COR Effective Date
+              </label>
+              <input
+                id="input-cor-eff-date"
+                type="date"
+                value={corEffectiveDate}
+                onChange={(e) => setCorEffectiveDate(e.target.value)}
+                className="w-full px-3 py-1.5 border border-amber-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white font-mono"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* NCOER Status Tracking */}

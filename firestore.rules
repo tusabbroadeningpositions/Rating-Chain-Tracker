@@ -75,6 +75,10 @@ service cloud.firestore {
              (!data.keys().hasAny(['priorThru']) || data.priorThru == null || (data.priorThru is string && data.priorThru.size() <= 100)) &&
              (!data.keys().hasAny(['priorDueHqda']) || data.priorDueHqda == null || (data.priorDueHqda is string && data.priorDueHqda.size() <= 100)) &&
              (!data.keys().hasAny(['isCustomStatus']) || data.isCustomStatus is bool) &&
+             (!data.keys().hasAny(['corNewRaterId']) || data.corNewRaterId == null || (data.corNewRaterId is string && data.corNewRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['corEffectiveDate']) || data.corEffectiveDate == null || (data.corEffectiveDate is string && data.corEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['parentRecordId']) || data.parentRecordId == null || (data.parentRecordId is string && data.parentRecordId.size() <= 128)) &&
+             (!data.keys().hasAny(['isHistoryEntry']) || data.isHistoryEntry is bool) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
@@ -153,7 +157,8 @@ service cloud.firestore {
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
                         'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
                         'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
-                        'priorThru', 'priorDueHqda', 'isCustomStatus', 'updatedAt'
+                        'priorThru', 'priorDueHqda', 'isCustomStatus', 'corNewRaterId', 
+                        'corEffectiveDate', 'parentRecordId', 'isHistoryEntry', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
                     );
                     
@@ -161,8 +166,9 @@ service cloud.firestore {
 
       match /history/{historyId} {
         allow read: if isSchemeReadable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
-        allow create: if isSchemeEditable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
-        allow delete: if isSchemeEditable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
+        allow create: if isSchemeEditable(incoming().schemeId);
+        allow update: if isSchemeEditable(existing().schemeId) && isSchemeEditable(incoming().schemeId);
+        allow delete: if isSchemeEditable(existing().schemeId);
       }
     }
   }

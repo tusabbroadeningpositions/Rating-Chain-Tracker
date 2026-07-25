@@ -87,6 +87,7 @@ export default function RatingTable({
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [lateShiftPromptRecord, setLateShiftPromptRecord] = useState<ArmyRatingRecord | null>(null);
   const [manualLateRecord, setManualLateRecord] = useState<ArmyRatingRecord | null>(null);
+  const [selectedCorRecord, setSelectedCorRecord] = useState<ArmyRatingRecord | null>(null);
   const [manualLateThru, setManualLateThru] = useState("");
   const [lateEditingRecordId, setLateEditingRecordId] = useState<string | null>(null);
   const [historyConfirm, setHistoryConfirm] = useState<{
@@ -1349,7 +1350,7 @@ export default function RatingTable({
     const normalize = (val: any) => (val === undefined || val === null ? "" : String(val).trim());
     
     if (normalize(curVal) !== normalize(histVal)) {
-      return "ring-2 ring-yellow-400 ring-inset bg-yellow-50/50";
+      return "ring-2 ring-yellow-400 ring-inset bg-yellow-100";
     }
     return "";
   };
@@ -1396,37 +1397,47 @@ export default function RatingTable({
       isAutoRed = true;
     }
 
-    let bgClass = "bg-white text-slate-800 border-slate-100"; // default blank
+    let bgClass = ""; 
+    let badgeClass = "bg-slate-100 text-slate-700 border-slate-300";
     if (status || targetRecord.priorThru) {
       if (isCustom) {
-        bgClass = "bg-slate-100 text-slate-700 border-slate-200"; // custom -> gray
+        bgClass = "bg-slate-100 text-slate-900";
+        badgeClass = "bg-white/40 text-slate-900 border-slate-300/50 font-bold shadow-none";
       } else {
         switch (status) {
           case "Not Submitted to HR":
-            bgClass = "bg-rose-100 text-rose-800 border-rose-200";
+            bgClass = "bg-rose-100 text-rose-950";
+            badgeClass = "bg-white/40 text-rose-950 border-rose-400/30 font-extrabold shadow-none";
             break;
           case "Submitted to HR":
           case "Reviewing - HR":
           case "Reviewing - CSM":
-            bgClass = "bg-blue-100 text-blue-800 border-blue-200";
+          case "Reviewing - BN":
+          case "Reviewing - BDE":
+            bgClass = "bg-blue-100 text-blue-950";
+            badgeClass = "bg-white/40 text-blue-950 border-blue-400/30 font-extrabold shadow-none";
             break;
           case "Returned for Edits":
-            bgClass = "bg-orange-100 text-orange-800 border-orange-200";
+            bgClass = "bg-orange-100 text-orange-950";
+            badgeClass = "bg-white/40 text-orange-950 border-orange-400/30 font-extrabold shadow-none";
             break;
           case "Out for Signatures":
-            bgClass = "bg-amber-100 text-amber-800 border-amber-200";
+            bgClass = "bg-amber-100 text-amber-950";
+            badgeClass = "bg-white/40 text-amber-950 border-amber-400/30 font-extrabold shadow-none";
             break;
           case "Submitted to HQDA":
-            bgClass = "bg-emerald-100 text-emerald-800 border-emerald-200";
+            bgClass = "bg-emerald-100 text-emerald-950";
+            badgeClass = "bg-white/40 text-emerald-950 border-emerald-400/30 font-extrabold shadow-none";
             break;
           default:
-            bgClass = "bg-slate-100 text-slate-700 border-slate-200";
+            bgClass = "bg-slate-100 text-slate-900";
+            badgeClass = "bg-white/40 text-slate-900 border-slate-300/40 font-medium shadow-none";
             break;
         }
       }
     }
 
-    return { status, bgClass, isAutoRed, isCustom, isWithin30Days };
+    return { status, bgClass, badgeClass, isAutoRed, isCustom, isWithin30Days };
   };
 
   const handleStatusChange = (r: ArmyRatingRecord, newStatus: string) => {
@@ -1588,13 +1599,7 @@ export default function RatingTable({
   };
 
   return (
-    <div className={`space-y-4 transition-colors duration-500 min-h-screen ${
-      selectedVersion === "future" 
-        ? "bg-blue-50/20" 
-        : selectedVersion === "alternate" 
-          ? "bg-emerald-50/20" 
-          : "bg-slate-50/30"
-    }`}>
+    <div className="space-y-4 transition-colors duration-500 min-h-screen bg-slate-100">
       {/* Search, Filter & Actions Bar */}
       <div className={`bg-white rounded shadow-sm border p-3 space-y-3 mx-4 mt-4 ${
         selectedVersion === "future" ? "border-blue-200" : selectedVersion === "alternate" ? "border-emerald-200" : "border-slate-200"
@@ -1612,7 +1617,7 @@ export default function RatingTable({
                 placeholder="Search name, rank, duty..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50"
               />
             </div>
 
@@ -1621,7 +1626,7 @@ export default function RatingTable({
               id="filter-role"
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50 min-w-[150px]"
             >
               <option value="">-- All Duty Titles --</option>
               {Object.values(RatingRole).map(role => (
@@ -1634,7 +1639,7 @@ export default function RatingTable({
               id="filter-rater"
               value={selectedRater}
               onChange={(e) => setSelectedRater(e.target.value)}
-              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50 min-w-[150px]"
             >
               <option value="">-- All Raters --</option>
               {uniqueRaters.map(rater => (
@@ -1647,7 +1652,7 @@ export default function RatingTable({
               id="filter-senior-rater"
               value={selectedSeniorRater}
               onChange={(e) => setSelectedSeniorRater(e.target.value)}
-              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 min-w-[150px]"
+              className="px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50 min-w-[150px]"
             >
               <option value="">-- All Senior Raters --</option>
               {uniqueSeniorRaters.map(sr => (
@@ -1789,16 +1794,16 @@ export default function RatingTable({
               setShowGreenLine(active);
             }
           }}
-          className="overflow-x-auto md:overflow-x-visible overflow-y-visible relative scrollbar-thin"
+          className="w-full bg-white relative overflow-visible border border-slate-200 rounded-lg shadow-sm"
         >
-          <table className="w-full min-w-max text-left border-collapse text-[11px]" id="rating-records-table">
-            <thead className="sticky top-0 z-[60] shadow-sm">
+          <table className="w-full min-w-[1200px] text-left border-collapse text-[11px]" id="rating-records-table">
+            <thead className="z-20">
               {/* Floating Header Banner inside thead so it stays with column headers on scroll */}
-              <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden sticky top-0 z-[60]">
-                <th colSpan={12} className={`px-3 py-2 border-b sticky top-0 z-[60] transition-colors duration-300 ${
-                  selectedVersion === "future" ? "bg-blue-500 border-blue-600 text-white" : 
-                  selectedVersion === "alternate" ? "bg-emerald-500 border-emerald-600 text-white" : 
-                  "bg-blue-950 border-blue-900 text-white"
+              <tr className="bg-[#1e293b] text-white font-sans uppercase tracking-tight font-bold print:hidden">
+                <th colSpan={12} className={`px-3 py-2 border-b sticky top-0 z-50 h-[34px] ${
+                  selectedVersion === "future" ? "bg-sky-600 border-sky-700 text-white" : 
+                  selectedVersion === "alternate" ? "bg-emerald-600 border-emerald-700 text-white" : 
+                  "bg-[#1e293b] border-slate-800 text-white"
                 }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1826,7 +1831,7 @@ export default function RatingTable({
                           onClick={() => onChangeVersion?.("future")}
                           className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all ${
                             selectedVersion === "future"
-                              ? "bg-amber-600 text-white font-black shadow-sm"
+                              ? "bg-sky-600 text-white font-black shadow-sm"
                               : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
@@ -1837,7 +1842,7 @@ export default function RatingTable({
                           onClick={() => onChangeVersion?.("alternate")}
                           className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all ${
                             selectedVersion === "alternate"
-                              ? "bg-blue-600 text-white font-black shadow-sm"
+                              ? "bg-emerald-600 text-white font-black shadow-sm"
                               : "text-slate-400 hover:text-slate-200"
                           }`}
                         >
@@ -1846,7 +1851,7 @@ export default function RatingTable({
                       </div>
                       {selectedVersion === "current" && (
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
-                          <span className="text-[10px] text-slate-300 normal-case font-medium">
+                          <span className="text-xs text-slate-300 normal-case font-medium">
                             Effective as of:
                           </span>
                           <input
@@ -1854,13 +1859,13 @@ export default function RatingTable({
                             value={effectiveAsOf}
                             disabled={readOnly}
                             onChange={(e) => onUpdateEffectiveAsOf?.(e.target.value)}
-                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50"
+                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50 [color-scheme:dark]"
                           />
                         </div>
                       )}
                       {selectedVersion === "current" ? null : (
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
-                          <span className="text-[10px] text-slate-300 normal-case font-medium">
+                          <span className="text-xs text-slate-300 normal-case font-medium">
                             Proposed Effective Date:
                           </span>
                           <input
@@ -1868,7 +1873,7 @@ export default function RatingTable({
                             value={proposedEffectiveDate}
                             disabled={readOnly}
                             onChange={(e) => onUpdateProposedEffectiveDate?.(e.target.value)}
-                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50"
+                            className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50 [color-scheme:dark]"
                           />
                         </div>
                       )}
@@ -1879,29 +1884,29 @@ export default function RatingTable({
                   </div>
                 </th>
               </tr>
-              <tr className="border-b border-slate-200 uppercase tracking-tighter font-bold font-mono text-[11px] text-slate-500 bg-slate-100">
-                <th className={`px-3 py-2.5 bg-slate-50 sticky left-0 top-[32px] z-[55] transition-all duration-200 border-r border-slate-200 relative ${
+              <tr className="border-b border-slate-200 uppercase tracking-tighter font-bold font-mono text-[10px] text-slate-500 bg-slate-100">
+                <th className={`px-2 py-2 bg-slate-50 sticky left-0 top-[34px] z-35 border-r border-slate-200 relative h-[34px] box-border ${
                   showGreenLine 
-                    ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:shadow-[1px_0_3px_rgba(16,185,129,0.5)] after:z-[56]" 
+                    ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:z-36" 
                     : ""
                 }`}>Name</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Rank</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Element</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">MOSC</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 bg-slate-50 sticky top-[32px] z-50">Principal Duty Title</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[160px] min-w-[160px] bg-slate-50 sticky top-[32px] z-50">Dates (From - Thru)</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Rater</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Senior Rater</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[150px] min-w-[150px] bg-slate-50 sticky top-[32px] z-50">Reviewer</th>
-                <th className="px-1.5 py-2.5 border-r border-slate-200 text-center w-20 min-w-[80px] leading-tight bg-slate-50 sticky top-[32px] z-50">Submission Type</th>
-                <th className="px-3 py-2.5 border-r border-slate-200 w-[170px] min-w-[170px] text-center bg-slate-50 sticky top-[32px] z-50">NCOER Status</th>
-                <th className="px-3 py-2.5 text-right bg-slate-50 sticky top-[32px] z-50">Actions</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Rank</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Element</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">MOSC</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Principal Duty Title</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Dates (From - Thru)</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Rater</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Senior Rater</th>
+                <th className="px-2 py-2 border-r border-slate-200 bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Reviewer</th>
+                <th className="px-1 py-2 border-r border-slate-200 text-center leading-tight bg-slate-50 sticky top-[34px] z-20 w-[70px] h-[34px] box-border">Type</th>
+                <th className="px-2 py-2 border-r border-slate-200 text-center bg-slate-50 sticky top-[34px] z-20 w-[145px] h-[34px] box-border">NCOER Status</th>
+                <th className="px-3 py-2 text-right bg-slate-50 sticky top-[34px] z-20 h-[34px] box-border">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-slate-400 font-medium">
+                  <td colSpan={12} className="px-4 py-8 text-center text-slate-400 font-medium">
                     No records found matching your search and filter criteria.
                   </td>
                 </tr>
@@ -1953,20 +1958,20 @@ export default function RatingTable({
                   return (
                     <React.Fragment key={r.id}>
                       <tr 
-                        className={`group transition-colors ${
+                        className={`group ${
                           thruDateClass 
-                            ? `${thruDateClass} ${isPastDue ? "hover:bg-rose-200/70" : "hover:bg-amber-200/70"}` 
+                            ? `${thruDateClass} ${isPastDue ? "hover:bg-rose-200" : "hover:bg-amber-200"}` 
                             : selectedVersion === "future" 
-                              ? `bg-blue-100/50 hover:bg-blue-200/60`
+                              ? `bg-blue-50 hover:bg-blue-100`
                               : selectedVersion === "alternate"
-                                ? `bg-emerald-100/50 hover:bg-emerald-200/60`
-                                : `hover:bg-slate-50 ${isEven ? "bg-slate-50/50" : "bg-white"}`
+                                ? `bg-emerald-50 hover:bg-emerald-100`
+                                : `${isEven ? "bg-slate-50" : "bg-white"} hover:bg-slate-100`
                         }`}
                       >
                       {/* Name */}
-                      <td className={`sticky left-0 z-30 px-3 py-2 font-semibold text-slate-900 transition-all duration-200 border-r border-slate-200 relative ${
+                      <td className={`sticky left-0 z-10 px-3 py-2 font-semibold text-slate-900 border-r border-slate-200 relative ${
                         showGreenLine 
-                          ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:shadow-[1px_0_3px_rgba(16,185,129,0.5)] after:z-10" 
+                          ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:z-[11]" 
                           : ""
                       } ${
                         isPastDue 
@@ -1974,10 +1979,10 @@ export default function RatingTable({
                           : isDueSoon 
                             ? "bg-amber-100 group-hover:bg-amber-200" 
                             : selectedVersion === "future"
-                              ? "bg-blue-100/80 group-hover:bg-blue-200/90"
+                              ? "bg-blue-100 group-hover:bg-blue-200"
                               : selectedVersion === "alternate"
-                                ? "bg-emerald-100/80 group-hover:bg-emerald-100/90"
-                                : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100/90`
+                                ? "bg-emerald-100 group-hover:bg-emerald-200"
+                                : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100`
                       }`}>
                         <div className="flex flex-col">
                           <span className="leading-tight">{r.name}</span>
@@ -1999,30 +2004,30 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rank */}
-                      <td className={`px-3 py-2 border-r border-slate-100 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-50/20" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
                           {r.rank}
                         </span>
                       </td>
                       {/* Element */}
-                      <td className={`px-3 py-2 text-slate-600 font-medium border-r border-slate-100 ${isElementDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
+                      <td className={`px-3 py-2 text-slate-600 font-medium border-r border-slate-200 ${isElementDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
                         {r.element}
                       </td>
                       {/* MOSC */}
-                      <td className={`px-3 py-2 border-r border-slate-100 text-center ${isMoscDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isMoscDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 font-mono text-[10px] font-bold rounded">
                           {r.dutyMosc}
                         </span>
                       </td>
                       {/* Principal Duty Title */}
-                      <td className={`px-3 py-2 border-r border-slate-100 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
                         <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
                           {r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role}
                         </span>
                       </td>
                       {/* Dates */}
-                      <td className={`px-3 py-2 border-r border-slate-100 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
-                        <div className="font-medium font-mono text-slate-600 flex flex-wrap gap-1 items-center">
+                      <td className={`px-3 py-2 border-r border-slate-200 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                        <div className="font-medium font-mono text-slate-600 flex flex-wrap gap-1 items-center leading-tight">
                           <span>{r.from} to</span>
                           <span className="px-1 rounded border border-transparent">
                             {r.thru}
@@ -2033,8 +2038,8 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
-                        <div className="font-semibold text-slate-800">{getRaterName(r.raterId)}</div>
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                        <div className="font-semibold text-slate-800 leading-tight">{getRaterName(r.raterId)}</div>
                         {r.raterId && r.raterEffectiveDate && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                             Eff: {r.raterEffectiveDate}
@@ -2042,16 +2047,16 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Senior Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         mismatchInfo 
-                          ? "ring-2 ring-rose-500 ring-inset relative z-10 bg-rose-50/20" 
+                          ? "ring-2 ring-rose-500 ring-inset relative bg-rose-100" 
                           : isSeniorRaterDiff 
-                            ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" 
+                            ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" 
                             : ""
                       }`}>
                         <div className="flex items-start justify-between gap-1">
                           <div>
-                            <div className="font-semibold text-slate-800">{getRaterName(r.seniorRaterId)}</div>
+                            <div className="font-semibold text-slate-800 leading-tight">{getRaterName(r.seniorRaterId)}</div>
                             {r.seniorRaterId && r.seniorRaterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Eff: {r.seniorRaterEffectiveDate}
@@ -2061,9 +2066,9 @@ export default function RatingTable({
                           {mismatchInfo && (
                             <div className="relative group/tooltip flex-shrink-0">
                               <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse cursor-help" />
-                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal">
+                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
                                 <p className="font-bold text-rose-400 mb-1">Senior Rater Mismatch</p>
-                                <p className="mb-1">
+                                <p className="mb-1 italic text-[10px]">
                                   Rater <strong className="text-amber-300">{mismatchInfo.raterName}</strong> is rated by <strong className="text-amber-300">{mismatchInfo.expectedName}</strong>.
                                 </p>
                                 <p>
@@ -2080,16 +2085,16 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Reviewer */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 ${
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         reviewerMismatchInfo 
-                          ? "ring-2 ring-purple-500 ring-inset relative z-10 bg-purple-50/20" 
+                          ? "ring-2 ring-purple-500 ring-inset relative bg-purple-100" 
                           : isReviewerDiff 
-                            ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" 
+                            ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" 
                             : ""
                       }`}>
                         <div className="flex items-start justify-between gap-1">
                           <div>
-                            <div className="font-semibold text-slate-800">{getReviewerName(r.reviewerId)}</div>
+                            <div className="font-semibold text-slate-800 leading-tight">{getReviewerName(r.reviewerId)}</div>
                             {r.reviewerId && r.reviewerEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Eff: {r.reviewerEffectiveDate}
@@ -2099,7 +2104,7 @@ export default function RatingTable({
                           {reviewerMismatchInfo && (
                             <div className="relative group/tooltip flex-shrink-0">
                               <HelpCircle className="w-4 h-4 text-purple-500 animate-pulse cursor-help" />
-                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
+                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left text-[11px]">
                                 <p className="font-bold text-purple-400 mb-1">SGM Reviewer Required</p>
                                 <p className="mb-1 italic">
                                   Senior Rater <strong className="text-amber-300">{reviewerMismatchInfo.seniorRaterName}</strong> is rank MSG.
@@ -2118,19 +2123,40 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Submission Type */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-100 text-center ${isSubmissionDiff ? "ring-2 ring-yellow-400 ring-inset relative z-10 bg-yellow-50/20" : ""}`}>
-                        <span className={`inline-block px-2 py-0.5 border font-bold font-mono text-[10px] rounded uppercase ${getSubmissionBadgeStyles(r.submissionType || "ANN")}`}>
-                          {r.submissionType || "ANN"}
-                        </span>
+                      <td className={`px-1 py-2 text-slate-700 border-r border-slate-200 text-center ${isSubmissionDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                        <div className="flex flex-col items-center justify-center">
+                          {r.submissionType === "COR" && (r.corNewRaterId || r.corEffectiveDate) ? (
+                            <div className="flex flex-col items-center">
+                              <span className={`inline-block px-1.5 py-0.5 border font-extrabold font-mono text-[9px] rounded uppercase ${getSubmissionBadgeStyles("COR")}`}>
+                                COR
+                              </span>
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCorRecord(r);
+                                }}
+                                className="text-[8px] text-amber-600 font-bold hover:text-amber-800 underline mt-1 uppercase tracking-tighter transition-colors"
+                                title="Click to view transition details"
+                              >
+                                View Details
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`inline-block px-1.5 py-0.5 border font-bold font-mono text-[9px] rounded uppercase ${getSubmissionBadgeStyles(r.submissionType || "ANN")}`}>
+                              {r.submissionType || "ANN"}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       {/* NCOER Status */}
-                      <td className={`px-3 py-2 border-r border-slate-100 text-center relative ${ncoerInfo.bgClass}`}>
+                      <td className={`px-2 py-2 border-r border-slate-200 text-center relative transition-colors ${ncoerInfo.bgClass || "bg-white"}`}>
                         {ncoerRecord.priorThru && (
                           <div className="absolute top-0.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center">
-                            <span className="text-[7px] font-black uppercase text-white bg-amber-600 px-1 rounded shadow-sm leading-none py-0.5 whitespace-nowrap">
+                            <span className="text-[7px] font-black uppercase text-white bg-amber-600 px-1 rounded leading-none py-0.5 whitespace-nowrap">
                               LATE
                             </span>
-                            <div className="bg-white/80 px-1 py-0.5 rounded-sm border border-amber-200 mt-0.5 shadow-xs">
+                            <div className="bg-white px-1 py-0.5 rounded-sm border border-amber-200 mt-0.5">
                               <p className="text-[6px] font-bold text-amber-900 leading-none">THRU: {ncoerRecord.priorThru}</p>
                               <p className="text-[6px] font-bold text-rose-700 leading-none mt-0.5">HQDA: {ncoerRecord.priorDueHqda}</p>
                             </div>
@@ -2151,28 +2177,28 @@ export default function RatingTable({
                                   handleStatusChange(ncoerRecord, val);
                                 }
                               }}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white/90 shadow-sm w-full max-w-[150px] ${
+                              className={`w-full px-1 py-1 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors shadow-xs whitespace-nowrap leading-tight h-auto ${ncoerInfo.badgeClass} ${
                                 (readOnly || selectedVersion !== "current") 
-                                  ? "text-slate-400 cursor-not-allowed bg-slate-100/50 border-slate-200" 
-                                  : "text-slate-800 cursor-pointer"
+                                  ? "opacity-60 cursor-not-allowed" 
+                                  : "cursor-pointer"
                               } ${ncoerRecord.priorThru ? "mt-4" : ""}`}
                             >
-                              <option value="">-- Blank --</option>
-                              <option value="Not Submitted to HR">Not Submitted to HR</option>
-                              <option value="Submitted to HR">Submitted to HR</option>
-                              <option value="Reviewing - HR">Reviewing - HR</option>
-                              <option value="Reviewing - CSM">Reviewing - CSM</option>
-                              <option value="Returned for Edits">Returned for Edits</option>
-                              <option value="Out for Signatures">Out for Signatures</option>
-                              <option value="Submitted to HQDA">Submitted to HQDA</option>
-                              <option value="custom">Other / Custom...</option>
+                              <option value="" className="bg-white text-slate-800">-- Blank --</option>
+                              <option value="Not Submitted to HR" className="bg-white text-slate-800">Not Submitted to HR</option>
+                              <option value="Submitted to HR" className="bg-white text-slate-800">Submitted to HR</option>
+                              <option value="Reviewing - HR" className="bg-white text-slate-800">Reviewing - HR</option>
+                              <option value="Reviewing - CSM" className="bg-white text-slate-800">Reviewing - CSM</option>
+                              <option value="Returned for Edits" className="bg-white text-slate-800">Returned for Edits</option>
+                              <option value="Out for Signatures" className="bg-white text-slate-800">Out for Signatures</option>
+                              <option value="Submitted to HQDA" className="bg-white text-slate-800">Submitted to HQDA</option>
+                              <option value="custom" className="bg-white text-slate-800">Other / Custom...</option>
                             </select>
                           ) : ncoerInfo.status ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold select-none border border-black/10">
+                            <span className={`px-2 py-1 rounded text-[10px] font-extrabold select-none border whitespace-nowrap leading-tight block w-full ${ncoerInfo.badgeClass}`}>
                               {ncoerInfo.status}
                             </span>
                           ) : (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center justify-center gap-1">
                               <span className="text-slate-300 font-semibold text-[10px] select-none">—</span>
                               {!readOnly && selectedVersion === "current" && (
                                 <button
@@ -2254,9 +2280,9 @@ export default function RatingTable({
                       </td>
                     </tr>
                     {expandedHistoryRecordId === r.id && (
-                      <tr className="bg-slate-100/80 border-b border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
-                        <td colSpan={13} className="px-0 py-0">
-                          <div className="pl-12 pr-6 py-4 bg-slate-100/50 shadow-inner border-l-4 border-slate-400">
+                      <tr className="bg-slate-100 border-b border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <td colSpan={12} className="px-0 py-0">
+                          <div className="pl-12 pr-6 py-4 bg-slate-100 shadow-inner border-l-4 border-slate-400">
                             <div className="flex items-center gap-2 mb-4">
                               <div className="p-1.5 bg-slate-200 rounded-full">
                                 <History className="w-4 h-4 text-slate-600" />
@@ -2285,13 +2311,13 @@ export default function RatingTable({
                                 if (!projected) return null;
                                 
                                 return (
-                                  <div className="bg-blue-50/50 border border-blue-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md ring-1 ring-blue-300/50">
-                                    <div className="bg-blue-600/10 px-4 py-2 border-b border-blue-200 flex items-center justify-between">
+                                  <div className="bg-blue-50 border border-blue-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md ring-1 ring-blue-300">
+                                    <div className="bg-blue-100 px-4 py-2 border-b border-blue-200 flex items-center justify-between">
                                       <div className="flex items-center gap-3">
                                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
                                         <div className="flex items-center gap-2">
                                           <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Projected Version</span>
-                                          <div className="flex items-center gap-1.5 bg-white/80 px-2 py-0.5 rounded border border-blue-200 shadow-sm">
+                                          <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded border border-blue-200 shadow-sm">
                                             <Info className="w-3 h-3 text-blue-500" />
                                             <span className="text-[9px] font-bold text-blue-600 uppercase tracking-tight italic">
                                               Current state in "Projected" roster profile
@@ -2316,7 +2342,7 @@ export default function RatingTable({
                                     <div className="overflow-x-auto scrollbar-thin">
                                       <table className="w-full text-left text-[10px] border-collapse">
                                         <thead>
-                                          <tr className="bg-blue-100/30 text-[9px] text-blue-500 font-black uppercase tracking-tighter border-b border-blue-100">
+                                          <tr className="bg-blue-100 text-[9px] text-blue-500 font-black uppercase tracking-tighter border-b border-blue-100">
                                             <th className="px-3 py-2 border-r border-blue-100">Name</th>
                                             <th className="px-3 py-2 border-r border-blue-100 text-center">Rank</th>
                                             <th className="px-3 py-2 border-r border-blue-100">Element</th>
@@ -2330,7 +2356,7 @@ export default function RatingTable({
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          <tr className="bg-blue-50/30 hover:bg-blue-100/20 transition-colors">
+                                          <tr className="bg-blue-50 hover:bg-blue-100 transition-colors">
                                             <td className={`px-3 py-3 border-r border-blue-100 font-bold text-slate-800 ${getDiffClass(r, projected, 'name')}`}>
                                               {projected.name}
                                             </td>
@@ -2634,7 +2660,7 @@ export default function RatingTable({
 
       {/* Shift to Next Year Prompt Modal */}
       {lateShiftPromptRecord && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -2691,7 +2717,7 @@ export default function RatingTable({
 
       {/* Manual Late NCOER Modal */}
       {manualLateRecord && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -2738,6 +2764,118 @@ export default function RatingTable({
                   SAVE LATE ENTRY
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COR Transition Popout */}
+      {selectedCorRecord && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-slate-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-amber-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <RefreshCw className="w-5 h-5 text-white animate-spin-slow" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg tracking-tight leading-none uppercase">Change of Rater</h3>
+                  <p className="text-[10px] font-bold text-amber-100 tracking-widest mt-1 opacity-80 uppercase">Rating Chain Transition</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedCorRecord(null)}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors active:scale-90"
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Soldier Info */}
+              <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 shadow-inner">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Affected Soldier</div>
+                  <div className="text-xl font-black text-slate-900">{selectedCorRecord.name}</div>
+                  <div className="text-xs font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded inline-block mt-1 uppercase border border-amber-100">
+                    {selectedCorRecord.rank} • {selectedCorRecord.role}
+                  </div>
+                </div>
+              </div>
+
+              {/* Transition visualization */}
+              <div className="relative">
+                <div className="absolute left-[50%] top-0 bottom-0 w-px bg-slate-100 -translate-x-1/2 z-0 hidden sm:block"></div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 relative z-10">
+                  {/* Current/Old Rater */}
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Previous Rater</div>
+                    <div className="p-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm text-center group">
+                      <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-2 text-slate-400 border border-slate-50">
+                        <History className="w-5 h-5" />
+                      </div>
+                      <div className="font-bold text-slate-800 text-sm truncate">{getRaterName(selectedCorRecord.raterId)}</div>
+                    </div>
+                  </div>
+
+                  {/* New Rater */}
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] text-center">New Incoming Rater</div>
+                    <div className="p-4 bg-amber-50 border-2 border-amber-500 rounded-2xl shadow-[0_4px_12px_rgba(217,119,6,0.15)] text-center animate-pulse-subtle">
+                      <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-2 text-white shadow-lg shadow-amber-200">
+                        <Plus className="w-6 h-6" />
+                      </div>
+                      <div className="font-black text-amber-900 text-sm truncate">
+                        {selectedCorRecord.corNewRaterId ? getRaterName(selectedCorRecord.corNewRaterId) : "Not Specified"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transition Arrow (Desktop) */}
+                <div className="absolute left-1/2 top-[60%] -translate-x-1/2 -translate-y-1/2 hidden sm:flex items-center justify-center bg-white border border-slate-200 rounded-full p-2 shadow-md z-20">
+                  <RefreshCw className="w-4 h-4 text-amber-600" />
+                </div>
+              </div>
+
+              {/* Effective Date Card */}
+              <div className="bg-slate-900 text-white p-5 rounded-2xl flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-4">
+                  <div className="bg-white/10 p-2.5 rounded-xl border border-white/5">
+                    <CalendarPlus className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Transition Effective Date</div>
+                    <div className="text-xl font-black font-mono tracking-tighter">
+                      {selectedCorRecord.corEffectiveDate || "NOT SET"}
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden sm:block">
+                  <div className="bg-amber-500/10 text-amber-500 text-[9px] font-black px-2.5 py-1 rounded-full border border-amber-500/20 uppercase tracking-wider">
+                    PENDING CHANGE
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase italic">
+                <Info className="w-3 h-3" />
+                Rating Scheme Update Pending
+              </div>
+              <button
+                onClick={() => setSelectedCorRecord(null)}
+                className="px-8 py-2.5 text-xs font-black bg-slate-900 text-white hover:bg-slate-800 rounded-xl shadow-lg shadow-slate-200 transition-all active:scale-95 uppercase tracking-widest"
+              >
+                Close View
+              </button>
             </div>
           </div>
         </div>

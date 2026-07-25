@@ -48,6 +48,8 @@ export interface ArmyRatingRecord {
   reviewerId: string; // ID of Reviewer
   reviewerEffectiveDate?: string; // Effective Date of Reviewer (YYYY-MM-DD)
   submissionType?: string; // Submission Type (ANN, COR, CTR, EXANN)
+  corNewRaterId?: string; // New Rater ID for Change of Rater (links to another ArmyRatingRecord)
+  corEffectiveDate?: string; // Effective Date for Change of Rater (YYYY-MM-DD)
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
   keyLeaderTitle?: string; // Custom title for key leader positions
   version?: "current" | "future" | "alternate"; // Version profile draft
