@@ -933,7 +933,7 @@ export default function App() {
                     onClick={() => setSelectedVersion("future")}
                     className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
                       selectedVersion === "future"
-                        ? "bg-amber-600 text-white font-bold shadow-sm"
+                        ? "bg-sky-600 text-white font-bold shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
@@ -946,7 +946,7 @@ export default function App() {
                     onClick={() => setSelectedVersion("alternate")}
                     className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
                       selectedVersion === "alternate"
-                        ? "bg-blue-600 text-white font-bold shadow-sm"
+                        ? "bg-emerald-600 text-white font-bold shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >

@@ -294,8 +294,8 @@ export default function OrgChartPreview({
           }>
             {isFullscreen && (
               <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b shadow-lg ${
-                selectedVersion === "future" ? "bg-amber-600 border-amber-700 text-white" : 
-                selectedVersion === "alternate" ? "bg-blue-600 border-blue-700 text-white" : 
+                selectedVersion === "future" ? "bg-sky-600 border-sky-700 text-white" : 
+                selectedVersion === "alternate" ? "bg-emerald-600 border-emerald-700 text-white" : 
                 "bg-[#1e293b] border-slate-800 text-white"
               }`}>
                 <div className="flex items-center gap-3">
@@ -322,7 +322,7 @@ export default function OrgChartPreview({
                         onClick={() => onChangeVersion("current")}
                         className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
                           selectedVersion === "current"
-                            ? "bg-slate-750 text-white font-black shadow-sm"
+                            ? "bg-slate-800 text-white font-black shadow-sm"
                             : "text-slate-300 hover:text-white"
                         }`}
                       >
@@ -333,7 +333,7 @@ export default function OrgChartPreview({
                         onClick={() => onChangeVersion("future")}
                         className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
                           selectedVersion === "future"
-                            ? "bg-amber-600 text-white font-black shadow-sm"
+                            ? "bg-sky-600 text-white font-black shadow-sm"
                             : "text-slate-300 hover:text-white"
                         }`}
                       >
@@ -347,7 +347,7 @@ export default function OrgChartPreview({
                         onClick={() => onChangeVersion("alternate")}
                         className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
                           selectedVersion === "alternate"
-                            ? "bg-blue-600 text-white font-black shadow-sm"
+                            ? "bg-emerald-600 text-white font-black shadow-sm"
                             : "text-slate-300 hover:text-white"
                         }`}
                       >
@@ -409,7 +409,7 @@ export default function OrgChartPreview({
               </div>
             )}
 
-            <div className={isFullscreen ? "flex-1 flex overflow-hidden relative bg-slate-950" : "flex flex-col flex-1"}>
+            <div className={`flex-1 flex overflow-hidden relative ${isFullscreen ? "bg-slate-950" : "bg-slate-900"}`}>
               {/* Scrollable View Wrapper */}
               <div 
                 ref={containerRef}
@@ -791,9 +791,9 @@ export default function OrgChartPreview({
             </motion.div>
           </div>
 
-          {/* Fullscreen Side Inspector Panel */}
-          {isFullscreen && selectedNode && (
-            <div className="w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl">
+          {/* Side Inspector Panel (Works in both fullscreen and normal mode) */}
+          {selectedNode && (
+            <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl ${!isFullscreen ? "h-full" : ""}`}>
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                   <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Active Soldier</span>
@@ -845,6 +845,16 @@ export default function OrgChartPreview({
                       <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
                     </div>
                   </div>
+
+                  {/* Interactions Guide (Added to consolidated panel) */}
+                  <div className="border-t border-slate-800 pt-3 space-y-2">
+                    <span className="font-bold text-slate-400 uppercase text-[9px] tracking-widest">Guide:</span>
+                    <ul className="list-disc pl-4 space-y-1 text-[10px] text-slate-500 leading-relaxed">
+                      <li>Hover cards to highlight rater network.</li>
+                      <li>Hold Ctrl/Cmd + scroll wheel to zoom.</li>
+                      <li>Drag the canvas to pan view.</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 
@@ -880,149 +890,6 @@ export default function OrgChartPreview({
           
         </div>
       </div>
-
-      {/* Rating Chain Inspector (Full Width, below the chart) */}
-      {!isFullscreen && (
-      <div className="bg-white border border-slate-200 rounded p-4 space-y-4 print:hidden shadow-sm flex flex-col mt-4">
-        <div className="p-2 border-b border-slate-200 bg-slate-50 flex justify-between items-center -mx-4 -mt-4 rounded-t">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-            <Info className="w-3.5 h-3.5 text-slate-500" />
-            Rating Chain Inspector
-          </h2>
-        </div>
-        
-        {selectedNode ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-            {/* Column 1: Active Soldier details */}
-            <div className="space-y-3 flex flex-col justify-between">
-              <div className="bg-slate-50/50 rounded border border-slate-200 p-3 space-y-2.5 shadow-inner flex-1">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Active Soldier</span>
-                    <h3 className="text-sm font-bold text-slate-800 mt-0.5">{selectedNode.name}</h3>
-                    <p className="text-xs text-slate-500 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
-                  </div>
-                  <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
-                    {selectedNode.rank}
-                  </span>
-                </div>
-
-                <div className="border-t border-slate-250 pt-2 text-xs space-y-1.5">
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">Element:</span>
-                    <span className="font-semibold text-slate-700">{selectedNode.element}</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">Principal Duty Title:</span>
-                    <span className="font-semibold text-slate-700">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-500">Rating Period:</span>
-                    <span className="font-semibold text-slate-700 font-mono">{selectedNode.from} to {selectedNode.thru}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 flex gap-2">
-                {!readOnly ? (
-                  <>
-                    <button
-                      onClick={() => onEditClick(selectedNode)}
-                      className="flex-1 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded text-xs font-bold transition-colors"
-                      id="btn-detail-edit"
-                    >
-                      Edit Profile
-                    </button>
-                    <button
-                      onClick={() => setSelectedNode(null)}
-                      className="py-1.5 px-3 border border-slate-200 hover:bg-slate-50 rounded text-xs font-semibold text-slate-500 hover:text-slate-700"
-                      id="btn-detail-deselect"
-                    >
-                      Clear
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setSelectedNode(null)}
-                    className="flex-1 py-1.5 border border-slate-200 hover:bg-slate-50 rounded text-xs font-semibold text-slate-500 hover:text-slate-700"
-                    id="btn-detail-deselect"
-                  >
-                    Clear Selection
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Column 2: Rating Chain Cards (Hierarchy) */}
-            <div className="space-y-2">
-              <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Assigned Hierarchy</h5>
-              
-              {/* Rater */}
-              <div className="p-2.5 bg-white border-l-4 border-emerald-500 rounded-r border border-slate-200 text-xs shadow-sm flex justify-between items-center">
-                <div>
-                  <div className="text-slate-400 font-bold uppercase text-[9px]">Rater (Direct)</div>
-                  <div className="font-bold text-slate-700 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-
-              {/* Senior Rater */}
-              <div className="p-2.5 bg-white border-l-4 border-indigo-500 rounded-r border border-slate-200 text-xs shadow-sm flex justify-between items-center">
-                <div>
-                  <div className="text-slate-400 font-bold uppercase text-[9px]">Senior Rater</div>
-                  <div className="font-bold text-slate-700 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-
-              {/* Reviewer */}
-              <div className="p-2.5 bg-white border-l-4 border-slate-400 rounded-r border border-slate-200 text-xs shadow-sm flex justify-between items-center">
-                <div>
-                  <div className="text-slate-400 font-bold uppercase text-[9px]">Reviewer</div>
-                  <div className="font-bold text-slate-700 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
-                </div>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              </div>
-            </div>
-
-            {/* Column 3: Interactions Guide & help */}
-            <div className="border-t md:border-t-0 md:border-l border-slate-200 pt-3 md:pt-0 md:pl-6 space-y-2 text-xs text-slate-500 flex flex-col justify-center">
-              <span className="font-bold text-slate-600 uppercase text-[10px]">Interactions Guide:</span>
-              <ul className="list-disc pl-4 space-y-1.5 text-[11px] text-slate-500">
-                <li>Hover over a card in the org chart to highlight their immediate rater network.</li>
-                <li>Vertical cards represent section musicians sorted by hierarchy.</li>
-                <li>Hold <kbd className="px-1 py-0.5 bg-slate-100 border border-slate-300 rounded text-[9px] font-mono text-slate-600">Ctrl</kbd> or <kbd className="px-1 py-0.5 bg-slate-100 border border-slate-300 rounded text-[9px] font-mono text-slate-600">Cmd</kbd> + scroll wheel to zoom the chart.</li>
-              </ul>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            <div className="md:col-span-2 text-center md:text-left py-4 px-4 space-y-3 text-slate-400">
-              <div className="flex flex-col md:flex-row items-center gap-3">
-                <User className="w-8 h-8 stroke-[1.5] text-slate-300 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium leading-relaxed text-slate-500">
-                    Click any soldier card in the org chart above to inspect their direct military rating chain and load details.
-                  </p>
-                  <div className="inline-flex items-center gap-1.5 text-[10px] text-slate-400 mt-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-150">
-                    <Calendar className="w-3 h-3 text-amber-500" />
-                    Dates format as YYYYMMDD
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="border-t md:border-t-0 md:border-l border-slate-200 pt-3 md:pt-0 md:pl-6 space-y-1 text-xs text-slate-500">
-              <span className="font-bold text-slate-600 uppercase text-[10px]">Interactions Guide:</span>
-              <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-500">
-                <li>Hover over a card to highlight their immediate rater network.</li>
-                <li>Vertical cards represent section musicians sorted by hierarchy.</li>
-              </ul>
-            </div>
-          </div>
-        )}
-      </div>
-      )}
   </div>
 );
 }
