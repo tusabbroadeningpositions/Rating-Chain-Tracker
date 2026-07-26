@@ -8,7 +8,7 @@ import { motion } from "motion/react";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
-import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle } from "lucide-react";
 
 interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
@@ -202,7 +202,7 @@ export default function OrgChartPreview({
   // Render Card Details panel
   const getRaterName = (raterId: string) => {
     if (!raterId || raterId === "-") return "None";
-    const searchSource = allRecords || records;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
     const r = searchSource.find(rec => rec.id === raterId);
     if (r) {
       if (r.rank) {
@@ -211,6 +211,53 @@ export default function OrgChartPreview({
       return r.name;
     }
     return formatNameToLastFirstRank(raterId);
+  };
+
+  const getSeniorRaterMismatchInfo = (r: ArmyRatingRecord) => {
+    if (!r.raterId) return null;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const raterRecord = searchSource.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const expectedSeniorRaterId = raterRecord.raterId;
+    if (!expectedSeniorRaterId || expectedSeniorRaterId === "-") return null;
+    
+    if (r.seniorRaterId === expectedSeniorRaterId) return null;
+    
+    const actualName = getRaterName(r.seniorRaterId);
+    const expectedName = getRaterName(expectedSeniorRaterId);
+    
+    if (actualName && expectedName && actualName !== "-" && expectedName !== "-") {
+      if (actualName.trim().toLowerCase() === expectedName.trim().toLowerCase()) {
+        return null;
+      }
+    }
+    
+    return {
+      raterName: getRaterName(r.raterId),
+      expectedName,
+      actualName
+    };
+  };
+
+  const getReviewerMismatchInfo = (r: ArmyRatingRecord) => {
+    if (!r.seniorRaterId || r.seniorRaterId === "-") return null;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const seniorRaterRecord = searchSource.find(rec => rec.id === r.seniorRaterId);
+    if (!seniorRaterRecord) return null;
+    
+    if (seniorRaterRecord.rank !== "MSG") return null;
+    
+    const hasReviewer = r.reviewerId && r.reviewerId !== "-";
+    if (hasReviewer) return null;
+    
+    const expectedReviewerId = seniorRaterRecord.raterId;
+    const expectedName = expectedReviewerId ? getRaterName(expectedReviewerId) : "SGM Reviewer";
+    
+    return {
+      seniorRaterName: getRaterName(r.seniorRaterId),
+      expectedName
+    };
   };
 
   return (
@@ -799,99 +846,151 @@ export default function OrgChartPreview({
           </div>
 
           {/* Side Inspector Panel (Works in both fullscreen and normal mode) */}
-          {selectedNode && (
-            <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl ${!isFullscreen ? "h-full" : ""}`}>
-              <div className="p-4 space-y-4 overflow-y-auto">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                  <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Active Soldier</span>
-                  <button 
-                    onClick={() => setSelectedNode(null)}
-                    className="text-slate-400 hover:text-slate-250 text-xs font-semibold"
-                  >
-                    Close
-                  </button>
-                </div>
+          {selectedNode && (() => {
+            const seniorRaterMismatch = getSeniorRaterMismatchInfo(selectedNode);
+            const reviewerMismatch = getReviewerMismatchInfo(selectedNode);
 
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-100 mt-0.5">{selectedNode.name}</h3>
-                    <p className="text-xs text-slate-400 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
-                  </div>
-
-                  <div className="border-t border-slate-800 pt-3 text-xs space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Element:</span>
-                      <span className="font-semibold text-slate-200">{selectedNode.element}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Principal Duty:</span>
-                      <span className="font-semibold text-slate-200">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Period:</span>
-                      <span className="font-semibold text-slate-200 font-mono">{selectedNode.from} to {selectedNode.thru}</span>
-                    </div>
-                  </div>
-
-                  {/* Assigned Hierarchy */}
-                  <div className="space-y-2 pt-3 border-t border-slate-800">
-                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
-                    
-                    <div className="p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs">
-                      <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
-                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
-                    </div>
-
-                    <div className="p-2.5 bg-slate-850 border-l-4 border-indigo-500 rounded text-xs">
-                      <div className="text-slate-400 font-bold uppercase text-[8px]">Senior Rater</div>
-                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
-                    </div>
-
-                    <div className="p-2.5 bg-slate-850 border-l-4 border-slate-400 rounded text-xs">
-                      <div className="text-slate-400 font-bold uppercase text-[8px]">Reviewer</div>
-                      <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
-                    </div>
-                  </div>
-
-                  {/* Interactions Guide (Added to consolidated panel) */}
-                  <div className="border-t border-slate-800 pt-3 space-y-2">
-                    <span className="font-bold text-slate-400 uppercase text-[9px] tracking-widest">Guide:</span>
-                    <ul className="list-disc pl-4 space-y-1 text-[10px] text-slate-500 leading-relaxed">
-                      <li>Hover cards to highlight rater network.</li>
-                      <li>Hold Ctrl/Cmd + scroll wheel to zoom.</li>
-                      <li>Drag the canvas to pan view.</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex gap-2 shrink-0">
-                {!readOnly ? (
-                  <>
-                    <button
-                      onClick={() => onEditClick(selectedNode)}
-                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-colors"
+            return (
+              <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl ${!isFullscreen ? "h-full" : ""}`}>
+                <div className="p-4 space-y-4 overflow-y-auto">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                    <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Active Soldier</span>
+                    <button 
+                      onClick={() => setSelectedNode(null)}
+                      className="text-slate-400 hover:text-slate-250 text-xs font-semibold"
                     >
-                      Edit Profile
+                      Close
                     </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-100 mt-0.5">{selectedNode.name}</h3>
+                      <p className="text-xs text-slate-400 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
+                    </div>
+
+                    <div className="border-t border-slate-800 pt-3 text-xs space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Element:</span>
+                        <span className="font-semibold text-slate-200">{selectedNode.element}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Principal Duty:</span>
+                        <span className="font-semibold text-slate-200">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Period:</span>
+                        <span className="font-semibold text-slate-200 font-mono">{selectedNode.from} to {selectedNode.thru}</span>
+                      </div>
+                    </div>
+
+                    {/* Discrepancy Alerts */}
+                    {seniorRaterMismatch && (
+                      <div className="p-3 bg-rose-950/80 border border-rose-500/80 rounded-md text-xs text-rose-200 space-y-1.5 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-300">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+                          <span>Senior Rater Mismatch</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-rose-200/90">
+                          Rater <strong className="text-white">{seniorRaterMismatch.raterName}</strong> is rated by <strong className="text-amber-300">{seniorRaterMismatch.expectedName}</strong>.
+                        </p>
+                        <p className="text-[11px] font-semibold text-rose-300">
+                          Expected Senior Rater: <span className="text-emerald-400 font-bold">{seniorRaterMismatch.expectedName}</span>
+                        </p>
+                      </div>
+                    )}
+
+                    {reviewerMismatch && (
+                      <div className="p-3 bg-purple-950/80 border border-purple-500/80 rounded-md text-xs text-purple-200 space-y-1.5 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-purple-300">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+                          <span>SGM Reviewer Required</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-purple-200/90">
+                          Senior Rater <strong className="text-amber-300">{reviewerMismatch.seniorRaterName}</strong> is rank MSG.
+                        </p>
+                        <p className="text-[11px] font-semibold text-purple-300">
+                          Expected Reviewer: <span className="text-emerald-400 font-bold">{reviewerMismatch.expectedName}</span>
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Assigned Hierarchy */}
+                    <div className="space-y-2 pt-3 border-t border-slate-800">
+                      <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
+                      
+                      <div className="p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs">
+                        <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
+                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
+                      </div>
+
+                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 ${seniorRaterMismatch ? "border-rose-500 bg-rose-950/30 ring-1 ring-rose-500/50" : "border-indigo-500"}`}>
+                        <div className="flex justify-between items-center">
+                          <div className="text-slate-400 font-bold uppercase text-[8px]">Senior Rater</div>
+                          {seniorRaterMismatch && <span className="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Mismatch</span>}
+                        </div>
+                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
+                        {seniorRaterMismatch && (
+                          <div className="text-[10px] text-rose-300 font-semibold mt-1 bg-rose-900/60 p-1 rounded border border-rose-800">
+                            Expected: {seniorRaterMismatch.expectedName}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 ${reviewerMismatch ? "border-purple-500 bg-purple-950/30 ring-1 ring-purple-500/50" : "border-slate-400"}`}>
+                        <div className="flex justify-between items-center">
+                          <div className="text-slate-400 font-bold uppercase text-[8px]">Reviewer</div>
+                          {reviewerMismatch && <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider">Required</span>}
+                        </div>
+                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
+                        {reviewerMismatch && (
+                          <div className="text-[10px] text-purple-300 font-semibold mt-1 bg-purple-900/60 p-1 rounded border border-purple-800">
+                            Expected: {reviewerMismatch.expectedName}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Interactions Guide (Added to consolidated panel) */}
+                    <div className="border-t border-slate-800 pt-3 space-y-2">
+                      <span className="font-bold text-slate-400 uppercase text-[9px] tracking-widest">Guide:</span>
+                      <ul className="list-disc pl-4 space-y-1 text-[10px] text-slate-500 leading-relaxed">
+                        <li>Hover cards to highlight rater network.</li>
+                        <li>Hold Ctrl/Cmd + scroll wheel to zoom.</li>
+                        <li>Drag the canvas to pan view.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex gap-2 shrink-0">
+                  {!readOnly ? (
+                    <>
+                      <button
+                        onClick={() => onEditClick(selectedNode)}
+                        className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-colors"
+                      >
+                        Edit Profile
+                      </button>
+                      <button
+                        onClick={() => setSelectedNode(null)}
+                        className="py-2 px-3 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
+                      >
+                        Clear
+                      </button>
+                    </>
+                  ) : (
                     <button
                       onClick={() => setSelectedNode(null)}
-                      className="py-2 px-3 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
+                      className="flex-1 py-2 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
                     >
-                      Clear
+                      Clear Selection
                     </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setSelectedNode(null)}
-                    className="flex-1 py-2 border border-slate-800 hover:bg-slate-800 rounded text-xs font-semibold text-slate-400 hover:text-slate-200"
-                  >
-                    Clear Selection
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
         </div>
           
