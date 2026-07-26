@@ -72,6 +72,8 @@ service cloud.firestore {
              (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
              (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
              (!data.keys().hasAny(['isLateMode']) || data.isLateMode is bool) &&
+             (!data.keys().hasAny(['lateRaterId']) || data.lateRaterId == null || (data.lateRaterId is string && data.lateRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['lateSeniorRaterId']) || data.lateSeniorRaterId == null || (data.lateSeniorRaterId is string && data.lateSeniorRaterId.size() <= 128)) &&
              (!data.keys().hasAny(['priorThru']) || data.priorThru == null || (data.priorThru is string && data.priorThru.size() <= 100)) &&
              (!data.keys().hasAny(['priorDueHqda']) || data.priorDueHqda == null || (data.priorDueHqda is string && data.priorDueHqda.size() <= 100)) &&
              (!data.keys().hasAny(['isCustomStatus']) || data.isCustomStatus is bool) &&
@@ -157,6 +159,7 @@ service cloud.firestore {
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
                         'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
                         'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
+                        'lateRaterId', 'lateSeniorRaterId',
                         'priorThru', 'priorDueHqda', 'isCustomStatus', 'corNewRaterId', 
                         'corEffectiveDate', 'parentRecordId', 'isHistoryEntry', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)

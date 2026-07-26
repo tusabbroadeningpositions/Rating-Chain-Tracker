@@ -8,10 +8,10 @@ import { jsPDF } from "jspdf";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
-import { parseCSV, generateTemplateCSV, formatDateToMDYYYY } from "../utils/csvHandler";
+import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText } from "lucide-react";
 import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -28,6 +28,7 @@ interface RatingTableProps {
   onChangeVersion?: (version: "current" | "future" | "alternate") => void;
   activeSchemeName?: string;
   proposedEffectiveDate?: string;
+  onPromoteVersion?: (fromVersion: "future" | "alternate") => void;
   onUpdateProposedEffectiveDate?: (dateVal: string) => void;
   effectiveAsOf?: string;
   onUpdateEffectiveAsOf?: (dateVal: string) => void;
@@ -64,6 +65,7 @@ export default function RatingTable({
   onChangeVersion,
   activeSchemeName = "Blues Rating Scheme",
   proposedEffectiveDate = "",
+  onPromoteVersion,
   onUpdateProposedEffectiveDate,
   effectiveAsOf = "",
   onUpdateEffectiveAsOf,
@@ -89,7 +91,19 @@ export default function RatingTable({
   const [manualLateRecord, setManualLateRecord] = useState<ArmyRatingRecord | null>(null);
   const [selectedCorRecord, setSelectedCorRecord] = useState<ArmyRatingRecord | null>(null);
   const [manualLateThru, setManualLateThru] = useState("");
+  const [manualLateRaterId, setManualLateRaterId] = useState("");
+  const [manualLateSeniorRaterId, setManualLateSeniorRaterId] = useState("");
   const [lateEditingRecordId, setLateEditingRecordId] = useState<string | null>(null);
+  const [clearingLateRecord, setClearingLateRecord] = useState<ArmyRatingRecord | null>(null);
+  const [overwriteLateDecision, setOverwriteLateDecision] = useState<{ current: ArmyRatingRecord; projected: ArmyRatingRecord } | null>(null);
+  const [overwriteDecisionView, setOverwriteDecisionView] = useState<"choice" | "late-mode">("choice");
+  const [isShowingReportPreview, setIsShowingReportPreview] = useState(false);
+  
+  // Batch Promotion State
+  const [batchPromoteIncomplete, setBatchPromoteIncomplete] = useState<ArmyRatingRecord[]>([]);
+  const [isShowingBatchPromoteSummary, setIsShowingBatchPromoteSummary] = useState(false);
+  const [batchPromoteVersion, setBatchPromoteVersion] = useState<"future" | "alternate" | null>(null);
+  const [batchLateSetupIndex, setBatchLateSetupIndex] = useState(-1); // Index in batchPromoteIncomplete
   const [historyConfirm, setHistoryConfirm] = useState<{
     isOpen: boolean;
     title: string;
@@ -149,6 +163,122 @@ export default function RatingTable({
     return formatNameToLastFirstRank(raterId);
   };
 
+  const performOverwrite = (current: ArmyRatingRecord, projected: ArmyRatingRecord, extraUpdates: Partial<ArmyRatingRecord> = {}) => {
+    // 1. Prepare the updated current record
+    const updated: ArmyRatingRecord = {
+      ...current,
+      ...extraUpdates,
+      element: projected.element,
+      dutyMosc: projected.dutyMosc,
+      rank: projected.rank,
+      name: projected.name,
+      from: projected.from,
+      thru: projected.thru,
+      dueHqda: projected.dueHqda,
+      submissionType: projected.submissionType,
+      role: projected.role,
+      keyLeaderTitle: projected.keyLeaderTitle,
+      raterEffectiveDate: projected.raterEffectiveDate,
+      seniorRaterEffectiveDate: projected.seniorRaterEffectiveDate,
+      reviewerEffectiveDate: projected.reviewerEffectiveDate,
+    };
+
+    const searchSource = allRecords || records || [];
+
+    // Helper to map projected ID to current ID
+    const mapToCurrentId = (projectedId: string) => {
+      if (!projectedId || projectedId === "-") return projectedId;
+      const projRater = searchSource.find(x => x.id === projectedId);
+      if (!projRater) return projectedId;
+      const currentRater = searchSource.find(x => 
+        (x.version === "current" || !x.version) && 
+        x.name === projRater.name && 
+        x.rank === projRater.rank
+      );
+      return currentRater ? currentRater.id : projectedId;
+    };
+
+    updated.raterId = mapToCurrentId(projected.raterId);
+    updated.seniorRaterId = mapToCurrentId(projected.seniorRaterId);
+    updated.reviewerId = mapToCurrentId(projected.reviewerId);
+
+    onUpdateRecord(updated);
+  };
+
+  const handleOverwriteCurrent = (current: ArmyRatingRecord, projected: ArmyRatingRecord) => {
+    // Check if status is incomplete
+    const incompleteStatuses = ["", "Not Submitted to HR", "Submitted to HR", "Reviewing - HR", "Reviewing - CSM", "Returned for Edits", "Out for Signatures", "Late", "custom"];
+    const currentStatus = current.ncoerStatus || "";
+    const isIncomplete = incompleteStatuses.includes(currentStatus) && currentStatus !== "Submitted to HQDA";
+
+    if (isIncomplete) {
+      setOverwriteLateDecision({ current, projected });
+      setOverwriteDecisionView("choice");
+      // Pre-fill manual late states just in case they choose late mode
+      setManualLateRaterId(current.raterId || "");
+      setManualLateSeniorRaterId(current.seniorRaterId || "");
+      try {
+        const d = new Date(current.thru + "T12:00:00");
+        d.setFullYear(d.getFullYear() - 1);
+        setManualLateThru(d.toISOString().split('T')[0]);
+      } catch (e) {
+        setManualLateThru("");
+      }
+      return;
+    }
+
+    setHistoryConfirm({
+      isOpen: true,
+      title: "Confirm Overwrite",
+      message: `Overwrite the CURRENT version of ${current.name} with all data from the PROJECTED version? This will update the rating chain, dates, and roles.`,
+      confirmLabel: "OVERWRITE CURRENT",
+      cancelLabel: "CANCEL",
+      variant: "warning",
+      onConfirm: () => {
+        performOverwrite(current, projected);
+        setHistoryConfirm(null);
+      }
+    });
+  };
+
+  const handlePromoteVersionClick = () => {
+    if (!selectedVersion || selectedVersion === "current") return;
+
+    // Find all incomplete and past-due NCOERs in current roster
+    const currentRoster = allRecords?.filter(r => (r.version || "current") === "current") || [];
+    const incompleteStatuses = ["", "Not Submitted to HR", "Submitted to HR", "Reviewing - HR", "Reviewing - CSM", "Returned for Edits", "Out for Signatures", "Late", "custom"];
+    
+    const incomplete = currentRoster.filter(r => {
+      const status = r.ncoerStatus || "";
+      const isIncomplete = incompleteStatuses.includes(status) && status !== "Submitted to HQDA";
+      
+      const thruDateClass = getThruDateClass(r.thru);
+      const isPastDue = thruDateClass.includes("rose-100");
+      
+      return isIncomplete && isPastDue;
+    });
+
+    if (incomplete.length > 0) {
+      setBatchPromoteIncomplete(incomplete);
+      setBatchPromoteVersion(selectedVersion as "future" | "alternate");
+      setIsShowingBatchPromoteSummary(true);
+    } else {
+      // Normal confirmation
+      setHistoryConfirm({
+        isOpen: true,
+        title: "Set as Current Version",
+        message: `This will permanently overwrite the CURRENT version with all data and structure from the ${selectedVersion.toUpperCase()} version. Are you sure you want to promote this version to Current?`,
+        confirmLabel: "SET AS CURRENT",
+        cancelLabel: "CANCEL",
+        variant: "question",
+        onConfirm: () => {
+          onPromoteVersion?.(selectedVersion as "future" | "alternate");
+          setHistoryConfirm(null);
+        }
+      });
+    }
+  };
+
   // Get unique Raters
   const uniqueRaters = useMemo(() => {
     const ratersSet = new Set<string>();
@@ -162,6 +292,53 @@ export default function RatingTable({
     });
     return Array.from(ratersSet).sort();
   }, [records]);
+
+  // Soldier options for dropdowns - Includes all soldiers and anyone referenced in rating chains
+  const soldierOptions = useMemo(() => {
+    const optionsMap = new Map<string, { id: string; label: string; sortKey: string }>();
+    const source = allRecords || records;
+    
+    // Add all current soldiers from source
+    source
+      .filter(r => r.version === "current" || !r.version)
+      .forEach(r => {
+        if (!optionsMap.has(r.id)) {
+          const formatted = formatNameToLastFirstRank(r.name, r.rank);
+          const namePart = formatted.split(" (")[0];
+          optionsMap.set(r.id, {
+            id: r.id,
+            label: formatted,
+            sortKey: namePart
+          });
+        }
+      });
+
+    // Also include anyone referenced as a rater or senior rater in the full source
+    source.forEach(r => {
+      const idsToCheck = [r.raterId, r.seniorRaterId].filter(id => id && id !== "-" && !optionsMap.has(id));
+      idsToCheck.forEach(id => {
+        const found = source.find(x => x.id === id);
+        if (found) {
+          const formatted = formatNameToLastFirstRank(found.name, found.rank);
+          const namePart = formatted.split(" (")[0];
+          optionsMap.set(id!, {
+            id: id!,
+            label: formatted,
+            sortKey: namePart
+          });
+        } else {
+          const nameLabel = getRaterName(id!);
+          if (nameLabel && nameLabel !== "-") {
+            const sortKey = nameLabel.split(" (")[0];
+            optionsMap.set(id!, { id: id!, label: nameLabel, sortKey });
+          }
+        }
+      });
+    });
+
+    return Array.from(optionsMap.values())
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  }, [records, allRecords]);
 
   // Get unique Senior Raters
   const uniqueSeniorRaters = useMemo(() => {
@@ -315,8 +492,8 @@ export default function RatingTable({
     document.body.removeChild(link);
   };
 
-  // Handle PDF NCOER Report Export
-  const handleExportNcoerReport = () => {
+  // Shared logic for NCOER report data
+  const getReportItems = () => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
@@ -357,6 +534,15 @@ export default function RatingTable({
       const dateB = new Date(b.thru).getTime() || 0;
       return dateA - dateB;
     });
+
+    return reportItems;
+  };
+
+  // Handle PDF NCOER Report Export
+  const handleExportNcoerReport = () => {
+    const reportItems = getReportItems();
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
 
     const doc = new jsPDF({
       orientation: "landscape",
@@ -453,7 +639,7 @@ export default function RatingTable({
       doc.text("RATER", 142, startY + 5.5);
       doc.text("SENIOR RATER", 179, startY + 5.5);
       doc.text("NCOER STATUS", 216, startY + 5.5);
-      doc.text("STATUS DATE", 253, startY + 5.5);
+      doc.text("DUE TO HQDA", 253, startY + 5.5);
     };
 
     const drawStatusPill = (x: number, y: number, w: number, h: number, status: string, isCustom: boolean) => {
@@ -631,10 +817,14 @@ export default function RatingTable({
       const roleStr = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role}\n(${r.keyLeaderTitle})` : r.role;
       const moscAndRole = `${roleStr}\n[MOSC: ${r.dutyMosc || "—"}]`;
 
+      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+      const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : r.raterId;
+      const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : r.seniorRaterId;
+
       const soldierLines = doc.splitTextToSize(soldierNameStr, 44) as string[];
       const roleLines = doc.splitTextToSize(moscAndRole, 45) as string[];
-      const raterLines = doc.splitTextToSize(helperGetName(r.raterId), 34) as string[];
-      const srLines = doc.splitTextToSize(helperGetName(r.seniorRaterId), 34) as string[];
+      const raterLines = doc.splitTextToSize(helperGetName(raterToUse), 34) as string[];
+      const srLines = doc.splitTextToSize(helperGetName(srToUse), 34) as string[];
 
       const maxLines = Math.max(soldierLines.length, roleLines.length, raterLines.length, srLines.length, 1.5);
       const rowHeight = Math.max(9, maxLines * 4.2 + 2);
@@ -713,12 +903,12 @@ export default function RatingTable({
       const statusPillY = y + (rowHeight - statusPillH) / 2 - 0.5;
       drawStatusPill(statusPillX, statusPillY, statusPillW, statusPillH, statusToDraw, ncoerInfo.isCustom);
 
-      // Col 7: Status Date
+      // Col 7: Due to HQDA
       doc.setFont("helvetica", "mono");
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      const statusDateStr = item.isLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (currentRec.ncoerStatusDate || new Date().toISOString().split('T')[0]);
-      doc.text(formatNiceDate(statusDateStr), 253, y + 4.5);
+      const hqdaDueStr = item.isLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));
+      doc.text(formatNiceDate(hqdaDueStr), 253, y + 4.5);
 
       y += rowHeight;
     });
@@ -764,21 +954,25 @@ export default function RatingTable({
         return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
       };
 
+      const isLate = r.ncoerStatus === "Late";
+      const raterId = isLate && r.lateRaterId ? r.lateRaterId : r.raterId;
+      const seniorRaterId = isLate && r.lateSeniorRaterId ? r.lateSeniorRaterId : r.seniorRaterId;
+
       return {
         "Element": r.element,
         "Principal\nDuty Title": r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role,
         "Duty MOSC": r.dutyMosc,
         "Rank": r.rank,
         "Name": r.name,
-        "From": formatDateToMDYYYY(r.from),
-        "Thru": formatDateToMDYYYY(r.thru),
-        "Due to\nHQDA": formatDateToMDYYYY(r.dueHqda || add90Days(r.thru)),
-        "Rater": helperGetName(r.raterId),
-        "Rater\nEffective Date": formatDateToMDYYYY(r.raterEffectiveDate),
-        "Senior Rater": helperGetName(r.seniorRaterId),
-        "Senior Rater\nEffective Date": formatDateToMDYYYY(r.seniorRaterEffectiveDate),
+        "From": formatDateToYYYYMMDD(r.from),
+        "Thru": formatDateToYYYYMMDD(r.thru),
+        "Due to\nHQDA": formatDateToYYYYMMDD(r.dueHqda || add90Days(r.thru)),
+        "Rater": helperGetName(raterId),
+        "Rater\nEffective Date": isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.raterEffectiveDate),
+        "Senior Rater": helperGetName(seniorRaterId),
+        "Senior Rater\nEffective Date": isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.seniorRaterEffectiveDate),
         "Reviewer": helperGetName(r.reviewerId),
-        "Reviewer\nEffective Date": formatDateToMDYYYY(r.reviewerEffectiveDate),
+        "Reviewer\nEffective Date": isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.reviewerEffectiveDate),
         "Submission\nType": r.submissionType || "ANN"
       };
     });
@@ -1296,7 +1490,8 @@ export default function RatingTable({
     "Reviewing - CSM",
     "Returned for Edits",
     "Out for Signatures",
-    "Submitted to HQDA"
+    "Submitted to HQDA",
+    "Late"
   ];
 
   useEffect(() => {
@@ -1421,6 +1616,10 @@ export default function RatingTable({
             bgClass = "bg-emerald-100 text-emerald-950";
             badgeClass = "bg-white/40 text-emerald-950 border-emerald-400/30 font-extrabold shadow-none";
             break;
+          case "Late":
+            bgClass = "bg-rose-100 text-rose-950";
+            badgeClass = "bg-rose-600 text-white border-rose-700 font-extrabold shadow-sm";
+            break;
           default:
             bgClass = "bg-slate-100 text-slate-900";
             badgeClass = "bg-white/40 text-slate-900 border-slate-300/40 font-medium shadow-none";
@@ -1436,6 +1635,44 @@ export default function RatingTable({
     const targetRecord = findCurrentRecord(r);
     const todayStr = new Date().toISOString().split('T')[0];
     
+    if (newStatus === "Late") {
+      setHistoryConfirm({
+        isOpen: true,
+        title: "Late NCOER Management",
+        message: targetRecord.ncoerStatus === "Late" 
+          ? `This record is currently marked as LATE. Would you like to reset the status and historical rating chain for ${targetRecord.name}?`
+          : `Mark this record as LATE for ${targetRecord.name}? This will allow specifying a historical rating chain for this period.`,
+        confirmLabel: targetRecord.ncoerStatus === "Late" ? "RESET TO CURRENT" : "MARK AS LATE",
+        cancelLabel: "KEEP AS IS",
+        variant: targetRecord.ncoerStatus === "Late" ? "danger" : "warning",
+        onConfirm: () => {
+          if (targetRecord.ncoerStatus === "Late") {
+            // RESET
+            onUpdateRecord({
+              ...targetRecord,
+              ncoerStatus: undefined,
+              ncoerStatusDate: undefined,
+              lateRaterId: undefined,
+              lateSeniorRaterId: undefined,
+              priorThru: undefined,
+              priorDueHqda: undefined
+            });
+          } else {
+            // SET
+            onUpdateRecord({
+              ...targetRecord,
+              ncoerStatus: "Late",
+              ncoerStatusDate: todayStr,
+              lateRaterId: targetRecord.lateRaterId || targetRecord.raterId,
+              lateSeniorRaterId: targetRecord.lateSeniorRaterId || targetRecord.seniorRaterId
+            });
+          }
+          setHistoryConfirm(null);
+        }
+      });
+      return;
+    }
+
     if (newStatus === "Submitted to HQDA") {
       setHistoryConfirm({
         isOpen: true,
@@ -1568,6 +1805,8 @@ export default function RatingTable({
 
   const handleOpenManualLate = (r: ArmyRatingRecord) => {
     setManualLateRecord(r);
+    setManualLateRaterId(r.raterId || "");
+    setManualLateSeniorRaterId(r.seniorRaterId || "");
     // Default thru date is one year prior to current thru
     try {
       const d = new Date(r.thru + "T12:00:00");
@@ -1585,7 +1824,9 @@ export default function RatingTable({
       ...manualLateRecord,
       priorThru: manualLateThru,
       priorDueHqda: add90Days(manualLateThru),
-      ncoerStatus: "Not Submitted to HR" // Default to a late status
+      lateRaterId: manualLateRaterId,
+      lateSeniorRaterId: manualLateSeniorRaterId,
+      ncoerStatus: "Not Submitted to HR"
     });
     setManualLateRecord(null);
   };
@@ -1835,6 +2076,15 @@ export default function RatingTable({
                         >
                           Alternate
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsShowingReportPreview(true)}
+                          className="ml-1 px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded shadow-sm transition-all flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider"
+                          title="Preview NCOER Monitoring Report"
+                        >
+                          <FileText className="w-3 h-3" />
+                          NCOER Report
+                        </button>
                       </div>
                       {selectedVersion === "current" && (
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
@@ -1862,6 +2112,18 @@ export default function RatingTable({
                             onChange={(e) => onUpdateProposedEffectiveDate?.(e.target.value)}
                             className="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono disabled:opacity-50 [color-scheme:dark]"
                           />
+                        </div>
+                      )}
+                      {selectedVersion !== "current" && (
+                        <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
+                          <button
+                            onClick={handlePromoteVersionClick}
+                            disabled={readOnly}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            Set as Current Version
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2028,8 +2290,14 @@ export default function RatingTable({
                       </td>
                       {/* Rater */}
                       <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
-                        <div className="font-semibold text-slate-800 leading-tight">{getRaterName(r.raterId)}</div>
-                        {r.raterId && r.raterEffectiveDate && (
+                        <div className="font-semibold text-slate-800 leading-tight">
+                          {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId 
+                            ? getRaterName(r.lateRaterId) 
+                            : getRaterName(r.raterId)}
+                        </div>
+                        {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId ? (
+                           <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
+                        ) : r.raterId && r.raterEffectiveDate && (
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                             Eff: {r.raterEffectiveDate}
                           </div>
@@ -2045,8 +2313,14 @@ export default function RatingTable({
                       }`}>
                         <div className="flex items-start justify-between gap-1">
                           <div>
-                            <div className="font-semibold text-slate-800 leading-tight">{getRaterName(r.seniorRaterId)}</div>
-                            {r.seniorRaterId && r.seniorRaterEffectiveDate && (
+                            <div className="font-semibold text-slate-800 leading-tight">
+                              {isCurrent && ncoerInfo.status === "Late" && r.lateSeniorRaterId 
+                                ? getRaterName(r.lateSeniorRaterId) 
+                                : getRaterName(r.seniorRaterId)}
+                            </div>
+                            {isCurrent && ncoerInfo.status === "Late" && r.lateSeniorRaterId ? (
+                              <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
+                            ) : r.seniorRaterId && r.seniorRaterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Eff: {r.seniorRaterEffectiveDate}
                               </div>
@@ -2142,19 +2416,19 @@ export default function RatingTable({
                       {selectedVersion === "current" && (
                         <td className={`px-2 py-2 border-r border-slate-200 text-center relative transition-colors ${ncoerInfo.bgClass || "bg-white"}`}>
                           {ncoerRecord.priorThru && (
-                            <div className="absolute top-0.5 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center">
-                              <span className="text-[7px] font-black uppercase text-white bg-amber-600 px-1 rounded leading-none py-0.5 whitespace-nowrap">
+                            <button 
+                              onClick={() => setClearingLateRecord(ncoerRecord)}
+                              className="absolute top-0 left-0 z-10 p-0.5 hover:scale-110 transition-transform cursor-pointer group/late"
+                              title="Click to manage late status"
+                            >
+                              <span className="text-[6px] font-black uppercase text-white bg-amber-600 px-1 rounded-br leading-none py-0.5 whitespace-nowrap shadow-sm group-hover/late:bg-amber-500">
                                 LATE
                               </span>
-                              <div className="bg-white px-1 py-0.5 rounded-sm border border-amber-200 mt-0.5">
-                                <p className="text-[6px] font-bold text-amber-900 leading-none">THRU: {ncoerRecord.priorThru}</p>
-                                <p className="text-[6px] font-bold text-rose-700 leading-none mt-0.5">HQDA: {ncoerRecord.priorDueHqda}</p>
-                              </div>
-                            </div>
+                            </button>
                           )}
-                          <div className="flex flex-col items-center gap-1 pt-1">
+                          <div className="flex flex-col items-center gap-1 pt-0.5">
                             {/* Status Selector Dropdown or Static Badge */}
-                            {(ncoerInfo.isWithin30Days || ncoerRecord.priorThru) ? (
+                            {(ncoerInfo.isWithin30Days || ncoerRecord.priorThru || ncoerInfo.status) ? (
                               <select
                                 value={ncoerInfo.isCustom ? "custom" : ncoerInfo.status}
                                 disabled={readOnly || selectedVersion !== "current"}
@@ -2171,7 +2445,7 @@ export default function RatingTable({
                                   (readOnly || selectedVersion !== "current") 
                                     ? "opacity-60 cursor-not-allowed" 
                                     : "cursor-pointer"
-                                } ${ncoerRecord.priorThru ? "mt-4" : ""}`}
+                                }`}
                               >
                                 <option value="" className="bg-white text-slate-800">-- Blank --</option>
                                 <option value="Not Submitted to HR" className="bg-white text-slate-800">Not Submitted to HR</option>
@@ -2181,6 +2455,7 @@ export default function RatingTable({
                                 <option value="Returned for Edits" className="bg-white text-slate-800">Returned for Edits</option>
                                 <option value="Out for Signatures" className="bg-white text-slate-800">Out for Signatures</option>
                                 <option value="Submitted to HQDA" className="bg-white text-slate-800">Submitted to HQDA</option>
+                                <option value="Late" className="bg-white text-slate-800 font-bold text-rose-600">Late</option>
                                 <option value="custom" className="bg-white text-slate-800">Other / Custom...</option>
                               </select>
                             ) : ncoerInfo.status ? (
@@ -2328,6 +2603,18 @@ export default function RatingTable({
                                           <Edit2 className="w-3.5 h-3.5" />
                                           Edit Projected Draft
                                         </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOverwriteCurrent(r, projected);
+                                          }}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded border border-emerald-700 transition-all uppercase tracking-tight shadow-md active:scale-95 ml-1"
+                                          title="Overwrite Current Version with these Projected changes"
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          Overwrite Current
+                                        </button>
                                       </div>
                                     </div>
                                     <div className="overflow-x-auto scrollbar-thin">
@@ -2342,8 +2629,7 @@ export default function RatingTable({
                                             <th className="px-3 py-2 border-r border-blue-100">Rating Dates</th>
                                             <th className="px-3 py-2 border-r border-blue-100">Rater</th>
                                             <th className="px-3 py-2 border-r border-blue-100">Senior Rater</th>
-                                            <th className="px-3 py-2 border-r border-blue-100">Reviewer</th>
-                                            <th className="px-3 py-2 text-center">NCOER Status</th>
+                                            <th className="px-3 py-2 text-center">Reviewer</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -2369,24 +2655,35 @@ export default function RatingTable({
                                                 <span>T: {projected.thru}</span>
                                               </div>
                                             </td>
-                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'raterId')}`}>
-                                              <div className="font-bold text-slate-700">{projected.raterId ? getRaterName(projected.raterId) : "Unassigned"}</div>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'raterId') || getDiffClass(r, projected, 'raterEffectiveDate')}`}>
+                                              <div className="font-bold text-slate-700">
+                                                {projected.ncoerStatus === "Late" && projected.lateRaterId 
+                                                  ? getRaterName(projected.lateRaterId) 
+                                                  : (projected.raterId ? getRaterName(projected.raterId) : "Unassigned")}
+                                              </div>
+                                              {projected.ncoerStatus === "Late" && projected.lateRaterId ? (
+                                                <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
+                                              ) : projected.raterEffectiveDate && (
+                                                <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.raterEffectiveDate}</div>
+                                              )}
                                             </td>
-                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'seniorRaterId')}`}>
-                                              <div className="font-bold text-slate-700">{projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned"}</div>
+                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'seniorRaterId') || getDiffClass(r, projected, 'seniorRaterEffectiveDate')}`}>
+                                              <div className="font-bold text-slate-700">
+                                                {projected.ncoerStatus === "Late" && projected.lateSeniorRaterId 
+                                                  ? getRaterName(projected.lateSeniorRaterId) 
+                                                  : (projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned")}
+                                              </div>
+                                              {projected.ncoerStatus === "Late" && projected.lateSeniorRaterId ? (
+                                                <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
+                                              ) : projected.seniorRaterEffectiveDate && (
+                                                <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.seniorRaterEffectiveDate}</div>
+                                              )}
                                             </td>
-                                            <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'reviewerId')}`}>
+                                            <td className={`px-3 py-3 ${getDiffClass(r, projected, 'reviewerId') || getDiffClass(r, projected, 'reviewerEffectiveDate')}`}>
                                               <div className="font-bold text-slate-700">{projected.reviewerId ? getRaterName(projected.reviewerId) : "Unassigned"}</div>
-                                            </td>
-                                            <td className={`px-3 py-3 text-center ${getDiffClass(r, projected, 'ncoerStatus')}`}>
-                                              {(() => {
-                                                const projCurrent = findCurrentRecord(projected);
-                                                return projCurrent.ncoerStatus ? (
-                                                  <span className="px-2 py-0.5 bg-blue-600 text-white rounded text-[9px] font-bold uppercase">{projCurrent.ncoerStatus}</span>
-                                                ) : (
-                                                  <span className="text-slate-300 italic">None</span>
-                                                );
-                                              })()}
+                                              {projected.reviewerEffectiveDate && (
+                                                <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.reviewerEffectiveDate}</div>
+                                              )}
                                             </td>
                                           </tr>
                                         </tbody>
@@ -2706,6 +3003,653 @@ export default function RatingTable({
         </div>
       )}
 
+      {/* Overwrite Decision Modal */}
+      {overwriteLateDecision && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            {overwriteDecisionView === "choice" ? (
+              <div className="p-8">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3.5 bg-blue-100 rounded-2xl">
+                    <RefreshCw className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-black uppercase tracking-tight text-lg text-slate-800 leading-none">Incomplete NCOER</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">Action Required for Overwrite</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 mb-8">
+                  <p className="text-sm text-slate-600 leading-relaxed">
+                    The current record for <strong className="text-slate-900">{overwriteLateDecision.current.name}</strong> is still <span className="font-bold text-amber-600 italic">Incomplete</span>.
+                  </p>
+                  <p className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100 leading-relaxed italic">
+                    Would you like to move the current status to <strong className="text-slate-700">Late Mode</strong> (keeping historical data) or <strong className="text-slate-700">Reset Status</strong> and continue with the overwrite?
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <button
+                    onClick={() => setOverwriteDecisionView("late-mode")}
+                    className="group relative flex items-center gap-3 w-full p-4 bg-amber-50 hover:bg-amber-600 text-amber-900 hover:text-white rounded-xl border border-amber-200 transition-all duration-300 text-left shadow-sm hover:shadow-md"
+                  >
+                     <div className="p-2 bg-white group-hover:bg-amber-500 rounded-lg shadow-sm transition-colors">
+                       <AlertTriangle className="w-5 h-5 text-amber-600 group-hover:text-white" />
+                     </div>
+                     <div className="flex-1">
+                       <p className="text-xs font-black uppercase tracking-tight">Enable Late Mode</p>
+                       <p className="text-[10px] opacity-70 font-medium">Keep historical data as a "Late" entry</p>
+                     </div>
+                     <ChevronRight className="w-4 h-4 ml-auto opacity-40 group-hover:opacity-100" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      performOverwrite(overwriteLateDecision.current, overwriteLateDecision.projected, { ncoerStatus: "" });
+                      setOverwriteLateDecision(null);
+                    }}
+                    className="group relative flex items-center gap-3 w-full p-4 bg-slate-50 hover:bg-slate-800 text-slate-700 hover:text-white rounded-xl border border-slate-200 transition-all duration-300 text-left shadow-sm hover:shadow-md"
+                  >
+                     <div className="p-2 bg-white group-hover:bg-slate-700 rounded-lg shadow-sm transition-colors">
+                       <RotateCcw className="w-5 h-5 text-slate-600 group-hover:text-white" />
+                     </div>
+                     <div className="flex-1">
+                       <p className="text-xs font-black uppercase tracking-tight">Reset Status</p>
+                       <p className="text-[10px] opacity-70 font-medium">Clear status and overwrite current version</p>
+                     </div>
+                     <ChevronRight className="w-4 h-4 ml-auto opacity-40 group-hover:opacity-100" />
+                  </button>
+
+                  <button
+                    onClick={() => setOverwriteLateDecision(null)}
+                    className="w-full py-4 text-slate-400 hover:text-slate-600 text-[10px] font-black uppercase tracking-[0.2em] transition-colors mt-2"
+                  >
+                    Cancel Operation
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3.5 bg-amber-100 rounded-2xl">
+                    <AlertTriangle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-black uppercase tracking-tight text-lg text-slate-800 leading-none">Late Mode Setup</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">Define Historical Context</p>
+                  </div>
+                </div>
+
+                <div className="space-y-5 mb-8">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Historical Thru Date</label>
+                    <input
+                      type="date"
+                      value={manualLateThru}
+                      onChange={(e) => setManualLateThru(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-4 pt-2">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Historical Rater</label>
+                      <select
+                        value={manualLateRaterId}
+                        onChange={(e) => setManualLateRaterId(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                      >
+                        <option value="">-- Select Rater --</option>
+                        {soldierOptions.map(opt => (
+                          <option key={opt.id} value={opt.id}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Historical Senior Rater</label>
+                      <select
+                        value={manualLateSeniorRaterId}
+                        onChange={(e) => setManualLateSeniorRaterId(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                      >
+                        <option value="">-- Select SR --</option>
+                        {soldierOptions.map(opt => (
+                          <option key={opt.id} value={opt.id}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">HQDA Due</p>
+                      <p className="text-xs font-mono font-bold text-rose-600 mt-0.5">
+                        {manualLateThru ? add90Days(manualLateThru) : "—"}
+                      </p>
+                    </div>
+                    <RefreshCw className="w-4 h-4 text-slate-300" />
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setOverwriteDecisionView("choice")}
+                    className="flex-1 py-3 bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold text-[10px] rounded-xl transition-all uppercase tracking-widest"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      performOverwrite(overwriteLateDecision.current, overwriteLateDecision.projected, {
+                        priorThru: manualLateThru,
+                        priorDueHqda: add90Days(manualLateThru),
+                        lateRaterId: manualLateRaterId,
+                        lateSeniorRaterId: manualLateSeniorRaterId,
+                        ncoerStatus: "Not Submitted to HR"
+                      });
+                      setOverwriteLateDecision(null);
+                    }}
+                    disabled={!manualLateThru}
+                    className="flex-2 py-3 bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-black text-[10px] rounded-xl transition-all uppercase tracking-widest shadow-md"
+                  >
+                    Confirm Late Mode Overwrite
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Report Preview Modal */}
+      {isShowingReportPreview && (() => {
+        const reportItems = getReportItems();
+        let totalPastDue = 0;
+        let totalComingDue = 0;
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        reportItems.forEach(item => {
+          if (item.thru) {
+            const thruDate = new Date(item.thru);
+            const diffTime = thruDate.getTime() - now.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays < 0) totalPastDue++;
+            else totalComingDue++;
+          }
+        });
+
+        return (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 flex flex-col">
+              {/* PDF-Style Header */}
+              <div className="relative">
+                <div className="bg-[#1E293B] p-6 pr-16">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold uppercase tracking-tight text-lg text-white leading-none">
+                        NCOER STATUS MONITORING REPORT - {(activeSchemeName || "ACTIVE RATING SCHEME").toUpperCase()}
+                      </h3>
+                      <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mt-2">
+                        AS OF: {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).toUpperCase()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="h-1 bg-amber-500 w-full" />
+                <button 
+                  onClick={() => setIsShowingReportPreview(false)}
+                  className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white">
+                {reportItems.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                      <Info className="w-10 h-10 text-slate-300" />
+                    </div>
+                    <h4 className="font-black uppercase tracking-tight text-slate-400">No NCOERs meet report criteria</h4>
+                    <p className="text-xs text-slate-400 mt-2 max-w-xs">
+                      All NCOER schedules are currently up-to-date. No records are past due or within 30 days of their thru date.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {/* Stats Summary Cards (Matching PDF) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-200">
+                      <div className="p-4">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Report Focus</p>
+                        <p className="text-sm font-bold text-slate-800">NCOERs Due within 30 Days / Overdue</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Critical Overdue</p>
+                        <p className="text-lg font-black text-rose-600 leading-tight">{totalPastDue} Soldiers Overdue</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Upcoming Action (30 Days)</p>
+                        <p className="text-lg font-black text-amber-600 leading-tight">{totalComingDue} Soldiers Upcoming</p>
+                      </div>
+                    </div>
+
+                    {/* Table View */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-700 text-[10px] font-black uppercase tracking-widest text-white items-center">
+                        <div className="col-span-3">Soldier (Rank / Name)</div>
+                        <div className="col-span-2">Duty Title & MOSC</div>
+                        <div className="col-span-2 text-center">Thru Date (Days)</div>
+                        <div className="col-span-2">Rater / Senior Rater</div>
+                        <div className="col-span-2 text-center">NCOER Status</div>
+                        <div className="col-span-1 text-right">HQDA Due</div>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {reportItems.map((item, idx) => {
+                          const thruDate = new Date(item.thru);
+                          thruDate.setHours(0, 0, 0, 0);
+                          const diffTime = thruDate.getTime() - now.getTime();
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                          
+                          let daysText = `${diffDays}d Remaining`;
+                          let daysColor = "text-amber-600";
+                          
+                          if (diffDays < 0) {
+                            daysText = `${Math.abs(diffDays)}d OVERDUE`;
+                            daysColor = "text-rose-600";
+                          } else if (diffDays === 0) {
+                            daysText = "DUE TODAY";
+                            daysColor = "text-amber-600";
+                          }
+
+                          if (item.isLate) {
+                            daysText = "HISTORICAL LATE";
+                            daysColor = "text-slate-400";
+                          }
+
+                          const helperGetName = (id: string) => {
+                            if (!id || id === "-") return "—";
+                            const rec = allRecords?.find(x => x.id === id);
+                            return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
+                          };
+
+                          const currentRec = allRecords?.find(x => x.id === item.record.id) || item.record;
+                          const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+                          const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : item.record.raterId;
+                          const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : item.record.seniorRaterId;
+
+                          // Badge Status Logic
+                          const badgeStatus = currentRec.ncoerStatus || "Not Submitted to HR";
+                          let badgeClass = "text-slate-600 bg-slate-50 border-slate-100";
+                          
+                          if (badgeStatus === "Submitted to HQDA") {
+                            badgeClass = "text-emerald-600 bg-emerald-50 border-emerald-100";
+                          } else if (badgeStatus.includes("Reviewing") || badgeStatus === "Out for Signatures") {
+                            badgeClass = "text-blue-600 bg-blue-50 border-blue-100";
+                          } else if (badgeStatus === "Not Submitted to HR" || badgeStatus === "Returned for Edits" || badgeStatus === "Late") {
+                            badgeClass = "text-rose-600 bg-rose-50 border-rose-100";
+                          }
+
+                          return (
+                            <div key={idx} className={`grid grid-cols-12 gap-4 px-4 py-4 items-center text-[11px] ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                              <div className="col-span-3 flex items-center gap-3">
+                                <div className="w-8 h-8 bg-white border border-slate-200 rounded flex items-center justify-center font-bold text-slate-600 shadow-sm shrink-0">
+                                  {item.record.rank}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-black text-slate-800 uppercase leading-none truncate">{item.record.name}</p>
+                                </div>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="font-bold text-slate-600 leading-tight">
+                                  {item.record.role}
+                                  {item.record.keyLeaderTitle && <span className="block text-[9px] text-slate-400 normal-case font-medium">({item.record.keyLeaderTitle})</span>}
+                                </p>
+                                <p className="text-[9px] font-mono text-slate-400 mt-0.5">[MOSC: {item.record.dutyMosc || "—"}]</p>
+                              </div>
+                              <div className="col-span-2 text-center">
+                                <p className="font-mono font-bold text-slate-700">{item.thru}</p>
+                                <p className={`text-[9px] font-black uppercase mt-0.5 ${daysColor}`}>
+                                  ({daysText})
+                                </p>
+                              </div>
+                              <div className="col-span-2 space-y-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <div className="w-1 h-1 bg-blue-500 rounded-full shrink-0" />
+                                  <span className="font-bold text-slate-600 truncate">{helperGetName(raterToUse)}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <div className="w-1 h-1 bg-emerald-500 rounded-full shrink-0" />
+                                  <span className="font-bold text-slate-600 truncate">{helperGetName(srToUse)}</span>
+                                </div>
+                              </div>
+                              <div className="col-span-2 flex justify-center">
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border tracking-tighter shadow-sm ${badgeClass}`}>
+                                  {badgeStatus}
+                                </span>
+                              </div>
+                              <div className="col-span-1 text-right">
+                                <p className="font-mono font-bold text-slate-700">{item.record.dueHqda || add90Days(item.thru)}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-400 text-xs">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>This preview dynamically updates based on your current view filters.</span>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsShowingReportPreview(false)}
+                    className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest"
+                  >
+                    Close Preview
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleExportNcoerReport();
+                      setIsShowingReportPreview(false);
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 text-white hover:bg-blue-700 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-blue-200 flex items-center gap-2"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    Download PDF Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Batch Promotion Summary Modal */}
+      {isShowingBatchPromoteSummary && (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xl animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            <div className="p-8">
+              <div className="flex items-center gap-5 mb-8">
+                <div className="p-4 bg-amber-100 rounded-2xl shadow-sm">
+                  <AlertTriangle className="w-8 h-8 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-black uppercase tracking-tight text-2xl text-slate-900 leading-none">Incomplete NCOERs Detected</h3>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Required Action Before Version Promotion</p>
+                </div>
+              </div>
+
+              <div className="space-y-6 mb-8">
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  You are promoting the <strong className="text-slate-900 uppercase font-black">{batchPromoteVersion}</strong> version to Current. 
+                  However, we detected <strong className="text-rose-600 font-black">{batchPromoteIncomplete.length}</strong> Soldiers with <span className="font-bold text-rose-600">Incomplete & Past-Due</span> NCOERs in the current roster.
+                </p>
+
+                <div className="max-h-48 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                  {batchPromoteIncomplete.map(r => (
+                    <div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center border border-slate-200 text-[10px] font-black text-slate-500 shadow-sm">
+                          {r.rank}
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-800 leading-none">{r.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-1">{r.role}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Past Due</p>
+                        <p className="text-[10px] font-mono font-bold text-slate-400">{r.thru}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-xs text-slate-500 bg-amber-50/50 p-4 rounded-2xl border border-amber-100 leading-relaxed italic">
+                  Would you like to move these past-due records to <strong className="text-slate-700">Late Mode</strong> individually to preserve their historical context, or <strong className="text-slate-700">Clear All Statuses</strong> and proceed with the full overwrite?
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  onClick={() => {
+                    setBatchLateSetupIndex(0);
+                    setIsShowingBatchPromoteSummary(false);
+                    // Initialize first setup
+                    const first = batchPromoteIncomplete[0];
+                    setManualLateRaterId(first.raterId || "");
+                    setManualLateSeniorRaterId(first.seniorRaterId || "");
+                    try {
+                      const d = new Date(first.thru + "T12:00:00");
+                      d.setFullYear(d.getFullYear() - 1);
+                      setManualLateThru(d.toISOString().split('T')[0]);
+                    } catch (e) {
+                      setManualLateThru("");
+                    }
+                  }}
+                  className="group flex flex-col items-center justify-center p-5 bg-white border-2 border-amber-500 hover:bg-amber-500 text-amber-600 hover:text-white rounded-2xl transition-all duration-300 shadow-sm hover:shadow-lg"
+                >
+                  <AlertCircle className="w-6 h-6 mb-2" />
+                  <span className="text-xs font-black uppercase tracking-tight">Setup Late Mode</span>
+                  <span className="text-[9px] opacity-70 font-bold mt-1">Configure each individually</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setHistoryConfirm({
+                      isOpen: true,
+                      title: "Confirm Batch Reset & Promotion",
+                      message: `This will reset the NCOER status for ${batchPromoteIncomplete.length} Soldiers and promote the ${batchPromoteVersion?.toUpperCase()} version. Are you sure?`,
+                      confirmLabel: "RESET AND PROMOTE",
+                      cancelLabel: "CANCEL",
+                      variant: "warning",
+                      onConfirm: () => {
+                        // First reset them (local optimization, parent will overwrite anyway)
+                        batchPromoteIncomplete.forEach(r => {
+                          onUpdateRecord({ ...r, ncoerStatus: "" });
+                        });
+                        onPromoteVersion?.(batchPromoteVersion!);
+                        setIsShowingBatchPromoteSummary(false);
+                        setBatchPromoteIncomplete([]);
+                        setBatchPromoteVersion(null);
+                        setHistoryConfirm(null);
+                      }
+                    });
+                  }}
+                  className="group flex flex-col items-center justify-center p-5 bg-white border-2 border-slate-800 hover:bg-slate-800 text-slate-800 hover:text-white rounded-2xl transition-all duration-300 shadow-sm hover:shadow-lg"
+                >
+                  <RotateCcw className="w-6 h-6 mb-2" />
+                  <span className="text-xs font-black uppercase tracking-tight">Reset All Status</span>
+                  <span className="text-[9px] opacity-70 font-bold mt-1">Direct overwrite (No history)</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsShowingBatchPromoteSummary(false);
+                  setBatchPromoteIncomplete([]);
+                  setBatchPromoteVersion(null);
+                }}
+                className="w-full mt-6 py-2 text-slate-400 hover:text-slate-600 text-[10px] font-black uppercase tracking-[0.3em] transition-colors"
+              >
+                Cancel Entire Operation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sequential Late Mode Setup Modal for Batch */}
+      {batchLateSetupIndex >= 0 && batchLateSetupIndex < batchPromoteIncomplete.length && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-100 rounded-2xl">
+                    <AlertTriangle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-black uppercase tracking-tight text-lg text-slate-900 leading-none">Batch Late Mode Setup</h3>
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-1.5 flex items-center gap-2">
+                      Soldier {batchLateSetupIndex + 1} of {batchPromoteIncomplete.length}
+                      <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Progress</p>
+                  <div className="w-24 h-2 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 transition-all duration-500" 
+                      style={{ width: `${((batchLateSetupIndex + 1) / batchPromoteIncomplete.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+                 <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center border border-slate-200 shadow-sm text-lg font-black text-slate-800">
+                      {batchPromoteIncomplete[batchLateSetupIndex].rank}
+                    </div>
+                    <div>
+                      <p className="text-xl font-black text-slate-900 leading-none">{batchPromoteIncomplete[batchLateSetupIndex].name}</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1.5">{batchPromoteIncomplete[batchLateSetupIndex].role}</p>
+                    </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 gap-6">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2.5 ml-1">Historical Thru Date</label>
+                      <input
+                        type="date"
+                        value={manualLateThru}
+                        onChange={(e) => setManualLateThru(e.target.value)}
+                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm transition-all"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2.5 ml-1">Historical Rater</label>
+                        <select
+                          value={manualLateRaterId}
+                          onChange={(e) => setManualLateRaterId(e.target.value)}
+                          className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                        >
+                          <option value="">-- Select Rater --</option>
+                          {soldierOptions.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2.5 ml-1">Historical SR</label>
+                        <select
+                          value={manualLateSeniorRaterId}
+                          onChange={(e) => setManualLateSeniorRaterId(e.target.value)}
+                          className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
+                        >
+                          <option value="">-- Select SR --</option>
+                          {soldierOptions.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    if (batchLateSetupIndex === 0) {
+                       setBatchLateSetupIndex(-1);
+                       setIsShowingBatchPromoteSummary(true);
+                    } else {
+                       const prevIdx = batchLateSetupIndex - 1;
+                       const prev = batchPromoteIncomplete[prevIdx];
+                       setBatchLateSetupIndex(prevIdx);
+                       setManualLateRaterId(prev.lateRaterId || prev.raterId || "");
+                       setManualLateSeniorRaterId(prev.lateSeniorRaterId || prev.seniorRaterId || "");
+                       setManualLateThru(prev.priorThru || "");
+                    }
+                  }}
+                  className="flex-1 py-4 bg-slate-100 text-slate-500 hover:bg-slate-200 font-black text-[10px] rounded-2xl transition-all uppercase tracking-widest"
+                >
+                  {batchLateSetupIndex === 0 ? "Back to Summary" : "Previous"}
+                </button>
+                <button
+                  onClick={() => {
+                    const record = batchPromoteIncomplete[batchLateSetupIndex];
+                    // Update the record in the temporary array
+                    const updatedRecord = {
+                      ...record,
+                      priorThru: manualLateThru,
+                      priorDueHqda: add90Days(manualLateThru),
+                      lateRaterId: manualLateRaterId,
+                      lateSeniorRaterId: manualLateSeniorRaterId,
+                      ncoerStatus: "Not Submitted to HR"
+                    };
+                    
+                    const nextQueue = [...batchPromoteIncomplete];
+                    nextQueue[batchLateSetupIndex] = updatedRecord;
+                    setBatchPromoteIncomplete(nextQueue);
+
+                    if (batchLateSetupIndex === batchPromoteIncomplete.length - 1) {
+                      // Final Finish
+                      setHistoryConfirm({
+                        isOpen: true,
+                        title: "Complete Promotion",
+                        message: `All ${batchPromoteIncomplete.length} records configured. Proceed with promoting the ${batchPromoteVersion?.toUpperCase()} version?`,
+                        confirmLabel: "FINISH AND PROMOTE",
+                        cancelLabel: "CANCEL",
+                        variant: "question",
+                        onConfirm: () => {
+                          // Apply all updates first
+                          nextQueue.forEach(r => onUpdateRecord(r));
+                          onPromoteVersion?.(batchPromoteVersion!);
+                          setBatchLateSetupIndex(-1);
+                          setBatchPromoteIncomplete([]);
+                          setBatchPromoteVersion(null);
+                          setHistoryConfirm(null);
+                        }
+                      });
+                    } else {
+                      // Move to next
+                      const nextIdx = batchLateSetupIndex + 1;
+                      const next = batchPromoteIncomplete[nextIdx];
+                      setBatchLateSetupIndex(nextIdx);
+                      setManualLateRaterId(next.raterId || "");
+                      setManualLateSeniorRaterId(next.seniorRaterId || "");
+                      try {
+                        const d = new Date(next.thru + "T12:00:00");
+                        d.setFullYear(d.getFullYear() - 1);
+                        setManualLateThru(d.toISOString().split('T')[0]);
+                      } catch (e) {
+                        setManualLateThru("");
+                      }
+                    }
+                  }}
+                  disabled={!manualLateThru}
+                  className="flex-2 py-4 bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-black text-[10px] rounded-2xl transition-all uppercase tracking-widest shadow-xl shadow-amber-200"
+                >
+                  {batchLateSetupIndex === batchPromoteIncomplete.length - 1 ? "Complete Setup & Promote" : "Next Soldier"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Manual Late NCOER Modal */}
       {manualLateRecord && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -2732,6 +3676,37 @@ export default function RatingTable({
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none"
                   />
                 </div>
+
+                <div className="grid grid-cols-1 gap-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Historical Rater</label>
+                    <select
+                      value={manualLateRaterId}
+                      onChange={(e) => setManualLateRaterId(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none"
+                    >
+                      <option value="">-- Select Rater --</option>
+                      {soldierOptions.map(opt => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Historical Senior Rater</label>
+                    <select
+                      value={manualLateSeniorRaterId}
+                      onChange={(e) => setManualLateSeniorRaterId(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-amber-500 outline-none"
+                    >
+                      <option value="">-- Select SR --</option>
+                      {soldierOptions.map(opt => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Calculated HQDA Due</p>
                   <p className="text-sm font-mono font-bold text-rose-600 mt-0.5">
@@ -2753,6 +3728,103 @@ export default function RatingTable({
                   className="flex-1 py-2 bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-black text-[10px] rounded-lg transition-all uppercase tracking-widest shadow-md"
                 >
                   SAVE LATE ENTRY
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Late Status Modal */}
+      {clearingLateRecord && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-rose-100 rounded-full">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <h3 className="font-black uppercase tracking-tight text-sm text-slate-800">Manage Late Status</h3>
+              </div>
+              
+              <p className="text-xs text-slate-600 mb-6 leading-relaxed font-medium">
+                This record for <strong className="text-slate-900">{clearingLateRecord.name}</strong> is currently marked as <strong className="text-rose-600">LATE</strong>. 
+                What would you like to do?
+              </p>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 mb-6">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Historical Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">Thru Date</p>
+                    <p className="text-xs font-mono font-bold text-slate-700">{clearingLateRecord.priorThru || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">HQDA Due</p>
+                    <p className="text-xs font-mono font-bold text-rose-600">{clearingLateRecord.priorDueHqda || "—"}</p>
+                  </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200">
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">Historical Rater</p>
+                    <p className="text-xs font-bold text-slate-700">{getRaterName(clearingLateRecord.lateRaterId || clearingLateRecord.raterId)}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">Historical SR</p>
+                    <p className="text-xs font-bold text-slate-700">{getRaterName(clearingLateRecord.lateSeniorRaterId || clearingLateRecord.seniorRaterId)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    onUpdateRecord({
+                      ...clearingLateRecord,
+                      ncoerStatus: undefined,
+                      ncoerStatusDate: undefined,
+                      lateRaterId: undefined,
+                      lateSeniorRaterId: undefined,
+                      priorThru: undefined,
+                      priorDueHqda: undefined
+                    });
+                    setClearingLateRecord(null);
+                  }}
+                  className="w-full py-2.5 bg-rose-600 text-white hover:bg-rose-700 font-black text-[10px] rounded-lg transition-all uppercase tracking-widest shadow-md flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  RESET TO CURRENT STATUS
+                </button>
+
+                <div className="relative py-2">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+                  <div className="relative flex justify-center text-[8px] uppercase font-bold text-slate-400 bg-white px-2">OR CHANGE STATUS TO</div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2">
+                  {["Submitted to HR", "Reviewing - HR", "Reviewing - CSM", "Returned for Edits", "Out for Signatures", "Submitted to HQDA"].map(status => (
+                    <button
+                      key={status}
+                      onClick={() => {
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        onUpdateRecord({
+                          ...clearingLateRecord,
+                          ncoerStatus: status,
+                          ncoerStatusDate: todayStr
+                        });
+                        setClearingLateRecord(null);
+                      }}
+                      className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[9px] rounded-lg transition-all uppercase tracking-wider"
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setClearingLateRecord(null)}
+                  className="w-full mt-4 py-2 bg-slate-100 text-slate-500 hover:bg-slate-200 font-bold text-[10px] rounded-lg transition-all uppercase tracking-widest"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

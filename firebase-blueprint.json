@@ -145,6 +145,14 @@
           "type": "boolean",
           "description": "Flag if record is in 'Late' mode for NCOER."
         },
+        "lateRaterId": {
+          "type": "string",
+          "description": "The historical rater ID for a late NCOER."
+        },
+        "lateSeniorRaterId": {
+          "type": "string",
+          "description": "The historical senior rater ID for a late NCOER."
+        },
         "priorThru": {
           "type": "string",
           "description": "Prior Thru Date for late mode (YYYY-MM-DD)."
@@ -206,6 +214,8 @@
             "dueHqda": { "type": "string" },
             "raterId": { "type": "string" },
             "seniorRaterId": { "type": "string" },
+            "lateRaterId": { "type": "string" },
+            "lateSeniorRaterId": { "type": "string" },
             "reviewerId": { "type": "string" },
             "submissionType": { "type": "string" },
             "role": { "type": "string" },

@@ -47,6 +47,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [ncoerStatusDate, setNcoerStatusDate] = useState("");
   const [isCustomStatus, setIsCustomStatus] = useState(false);
   const [customStatusText, setCustomStatusText] = useState("");
+  const [lateRaterId, setLateRaterId] = useState("");
+  const [lateSeniorRaterId, setLateSeniorRaterId] = useState("");
 
   // Initialize form with editing record or defaults
   useEffect(() => {
@@ -78,6 +80,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setNcoerStatusDate(ncoerRecordToUse.ncoerStatusDate || "");
       setIsCustomStatus(!!ncoerRecordToUse.isCustomStatus);
       setCustomStatusText(ncoerRecordToUse.isCustomStatus ? ncoerRecordToUse.ncoerStatus || "" : "");
+      
+      setLateRaterId(ncoerRecordToUse.lateRaterId || editingRecord.raterId || "");
+      setLateSeniorRaterId(ncoerRecordToUse.lateSeniorRaterId || editingRecord.seniorRaterId || "");
       
       const clean = (s: string) => s.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
       const findIdByName = (val: string) => {
@@ -194,6 +199,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : "",
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
+      lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) ? lateRaterId : undefined,
+      lateSeniorRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) ? lateSeniorRaterId : undefined,
       isCustomStatus
     };
 
@@ -725,8 +732,55 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                 <option value="Returned for Edits">Returned for Edits</option>
                 <option value="Out for Signatures">Out for Signatures</option>
                 <option value="Submitted to HQDA">Submitted to HQDA</option>
+                <option value="Late">Late</option>
                 <option value="custom">Other / Custom Status...</option>
               </select>
+
+              {(ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-1.5 h-4 bg-amber-500 rounded-full" />
+                    <span className="text-[10px] font-black text-amber-800 uppercase tracking-tight">Late NCOER Rating Chain</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-amber-700 uppercase tracking-wider block">Late Rater</label>
+                      <select
+                        value={lateRaterId}
+                        onChange={(e) => setLateRaterId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-amber-200 rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                      >
+                        <option value="">-- Select Late Rater --</option>
+                        {combinedRaterOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-amber-700 uppercase tracking-wider block">Late Senior Rater</label>
+                      <select
+                        value={lateSeniorRaterId}
+                        onChange={(e) => setLateSeniorRaterId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-amber-200 rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                      >
+                        <option value="">-- Select Late SR --</option>
+                        {combinedRaterOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-amber-600 font-medium italic">
+                    Specify who the Rater and Senior Rater were during the historical period of this late NCOER.
+                  </p>
+                </div>
+              )}
 
               {isCustomStatus && (
                 <input

@@ -55,8 +55,11 @@ export interface ArmyRatingRecord {
   version?: "current" | "future" | "alternate"; // Version profile draft
   ncoerStatus?: string; // NCOER Status
   ncoerStatusDate?: string; // NCOER Status change date/timestamp (YYYY-MM-DD)
+  isLateMode?: boolean; // Flag if record is in 'Late' mode for NCOER
   priorThru?: string; // Prior Thru Date for late mode
   priorDueHqda?: string; // Prior Due to HQDA Date for late mode
+  lateRaterId?: string; // Historical Rater ID for late mode
+  lateSeniorRaterId?: string; // Historical Senior Rater ID for late mode
   isCustomStatus?: boolean; // Flag if status is custom
   parentRecordId?: string; // If this is a history entry, the ID of the parent record
   isHistoryEntry?: boolean; // Flag if this is a history entry

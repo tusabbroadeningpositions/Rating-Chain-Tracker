@@ -1003,29 +1003,6 @@ export default function App() {
                       Copy Projected Version Data
                     </button>
                   )}
-
-                  {filteredRecords.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setConfirmConfig({
-                          isOpen: true,
-                          title: "Set as Current Version",
-                          message: `This will permanently overwrite the CURRENT version with all data and structure from the ${selectedVersion.toUpperCase()} version. Are you sure you want to promote this version to Current?`,
-                          confirmLabel: "SET AS CURRENT",
-                          cancelLabel: "CANCEL",
-                          variant: "question",
-                          onConfirm: async () => {
-                            await handleCopyVersion(selectedVersion, "current");
-                            setSelectedVersion("current");
-                          }
-                        });
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded shadow-sm hover:shadow transition-all uppercase tracking-tight"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Set as Current Version
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -1089,6 +1066,10 @@ export default function App() {
                   readOnly={!canEdit}
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
+                  onPromoteVersion={async (fromVer) => {
+                    await handleCopyVersion(fromVer, "current");
+                    setSelectedVersion("current");
+                  }}
                   activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
                   proposedEffectiveDate={
                     selectedVersion === "future"

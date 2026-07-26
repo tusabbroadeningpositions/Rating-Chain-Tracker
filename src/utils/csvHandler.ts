@@ -462,6 +462,21 @@ export function formatDateToMDYYYY(dateStr: string | undefined): string {
 }
 
 /**
+ * Formats a YYYY-MM-DD date string to YYYYMMDD
+ */
+export function formatDateToYYYYMMDD(dateStr: string | undefined): string {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  
+  const yyyy = parts[0];
+  const mm = parts[1].padStart(2, "0");
+  const dd = parts[2].padStart(2, "0");
+  
+  return `${yyyy}${mm}${dd}`;
+}
+
+/**
  * Generates a template CSV string
  */
 export function generateTemplateCSV(records: ArmyRatingRecord[] = []): string {

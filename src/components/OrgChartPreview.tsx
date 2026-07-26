@@ -943,6 +943,9 @@ export default function OrgChartPreview({
                           {reviewerMismatch && <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider">Required</span>}
                         </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
+                        {selectedNode.reviewerEffectiveDate && (
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.reviewerEffectiveDate}</div>
+                        )}
                         {reviewerMismatch && (
                           <div className="text-[10px] text-purple-300 font-semibold mt-1 bg-purple-900/60 p-1 rounded border border-purple-800">
                             Expected: {reviewerMismatch.expectedName}
