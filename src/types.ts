@@ -67,3 +67,57 @@ export interface OrgNode {
   record: ArmyRatingRecord;
   children: OrgNode[];
 }
+
+export const SENIOR_RATER_RANKS = ["MAJ", "LTC", "COL", "CPT", "1LT", "2LT", "SGM", "MSG", "SFC", "SSG", "CW5", "CW4", "CW3", "CW2", "WO1"];
+
+export function formatNameToLastFirstRank(nameStr: string, rankStr: string = ""): string {
+  if (!nameStr) return "";
+  let raw = nameStr.trim();
+  if (!raw) return "";
+
+  let extractedRank = rankStr ? rankStr.trim() : "";
+
+  // 1. Extract rank in parentheses at the end if present, e.g. "Alger, Bonnie (CPT)" or "Bonnie Alger (CPT)"
+  const parenMatch = raw.match(/^(.*?)\s*\(([^)]+)\)$/);
+  if (parenMatch) {
+    raw = parenMatch[1].trim();
+    if (!extractedRank) {
+      extractedRank = parenMatch[2].trim();
+    }
+  }
+
+  // 2. Extract leading rank if present, e.g. "CPT Alger, Bonnie" or "CPT Bonnie Alger"
+  for (const rk of SENIOR_RATER_RANKS) {
+    if (raw.startsWith(rk + " ")) {
+      if (!extractedRank) {
+        extractedRank = rk;
+      }
+      raw = raw.substring(rk.length + 1).trim();
+      break;
+    }
+  }
+
+  // 3. Format name into Last, First
+  let formattedName = raw;
+  if (raw.includes(",")) {
+    const parts = raw.split(",");
+    const last = parts[0].trim();
+    const first = parts.slice(1).join(",").trim();
+    formattedName = first ? `${last}, ${first}` : last;
+  } else {
+    const tokens = raw.split(/\s+/);
+    if (tokens.length >= 2) {
+      const last = tokens[tokens.length - 1];
+      const first = tokens.slice(0, tokens.length - 1).join(" ");
+      formattedName = `${last}, ${first}`;
+    } else {
+      formattedName = raw;
+    }
+  }
+
+  // 4. Combine with rank in parentheses: Last, First (RANK)
+  if (extractedRank) {
+    return `${formattedName} (${extractedRank})`;
+  }
+  return formattedName;
+}

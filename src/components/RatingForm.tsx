@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { ArmyRatingRecord, RatingRole } from "../types";
+import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
 import { add90Days, calculateThruDate } from "../utils/dateUtils";
 import { Plus, Check, X, RotateCcw } from "lucide-react";
@@ -19,7 +19,8 @@ interface RatingFormProps {
 }
 
 const COMMON_RANKS = ["SSG", "SFC", "MSG", "SGM", "1LT", "2LT", "CPT", "MAJ", "LTC", "COL"];
-const COMMON_ELEMENTS = ["Ceremonial", "Chorus", "Concert", "Popular", "Strings", "Support"];
+const COMMON_ELEMENTS = ["Command", "Ceremonial", "Chorus", "Concert", "Popular", "Strings", "Support"];
+const COMMON_MOSCS = ["42C", "420C", "42S3O", "42S4O", "42S5O", "42S6O"];
 
 export default function RatingForm({ records, allRecords, onSave, onCancel, editingRecord, selectedVersion }: RatingFormProps) {
   const [name, setName] = useState("");
@@ -35,6 +36,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [raterEffectiveDate, setRaterEffectiveDate] = useState("");
   const [seniorRaterId, setSeniorRaterId] = useState("");
   const [seniorRaterEffectiveDate, setSeniorRaterEffectiveDate] = useState("");
+  const [srManualRank, setSrManualRank] = useState("MAJ");
+  const [srManualName, setSrManualName] = useState("");
   const [reviewerId, setReviewerId] = useState("");
   const [reviewerEffectiveDate, setReviewerEffectiveDate] = useState("");
   const [submissionType, setSubmissionType] = useState("ANN");
@@ -89,8 +92,39 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
       setRaterId(findIdByName(editingRecord.raterId));
       setRaterEffectiveDate(editingRecord.raterEffectiveDate || "");
-      setSeniorRaterId(findIdByName(editingRecord.seniorRaterId));
+      
+      const rawSeniorRater = editingRecord.seniorRaterId || "";
+      const matchedSrRecord = records.find(r => r.id === rawSeniorRater);
+      if (matchedSrRecord) {
+        setSeniorRaterId(matchedSrRecord.id);
+        setSrManualRank(matchedSrRecord.rank || "MAJ");
+        setSrManualName(matchedSrRecord.name);
+      } else if (rawSeniorRater) {
+        setSeniorRaterId(rawSeniorRater);
+        const matchParentheses = rawSeniorRater.match(/^(.*?)\s*\(([^)]+)\)$/);
+        if (matchParentheses) {
+          const rawName = matchParentheses[1].trim();
+          const rawRank = matchParentheses[2].trim();
+          setSrManualName(formatNameToLastFirstRank(rawName).replace(/\s*\([^)]+\)$/, ""));
+          setSrManualRank(rawRank);
+        } else {
+          const matchedRank = SENIOR_RATER_RANKS.find(rk => rawSeniorRater.startsWith(rk + " "));
+          if (matchedRank) {
+            setSrManualRank(matchedRank);
+            const rawName = rawSeniorRater.substring(matchedRank.length + 1).trim();
+            setSrManualName(formatNameToLastFirstRank(rawName).replace(/\s*\([^)]+\)$/, ""));
+          } else {
+            setSrManualRank("MAJ");
+            setSrManualName(formatNameToLastFirstRank(rawSeniorRater).replace(/\s*\([^)]+\)$/, ""));
+          }
+        }
+      } else {
+        setSeniorRaterId("");
+        setSrManualRank("MAJ");
+        setSrManualName("");
+      }
       setSeniorRaterEffectiveDate(editingRecord.seniorRaterEffectiveDate || "");
+
       setReviewerId(findIdByName(editingRecord.reviewerId));
       setReviewerEffectiveDate(editingRecord.reviewerEffectiveDate || "");
       setSubmissionType(editingRecord.submissionType || "ANN");
@@ -117,6 +151,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setRaterId("");
       setRaterEffectiveDate("");
       setSeniorRaterId("");
+      setSrManualRank("MAJ");
+      setSrManualName("");
       setSeniorRaterEffectiveDate("");
       setReviewerId("");
       setReviewerEffectiveDate("");
@@ -132,6 +168,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     e.preventDefault();
     if (!name.trim()) return;
 
+    const computedSeniorRaterId = (role === RatingRole.ELEMENT_LEADER)
+      ? (srManualName.trim() ? formatNameToLastFirstRank(srManualName.trim(), srManualRank.trim()) : seniorRaterId)
+      : seniorRaterId;
+
     const savedRecord: ArmyRatingRecord = {
       id: editingRecord ? editingRecord.id : `record_${Date.now()}`,
       element: element.trim(),
@@ -143,7 +183,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       dueHqda: dueHqdaDate,
       raterId,
       raterEffectiveDate,
-      seniorRaterId,
+      seniorRaterId: computedSeniorRaterId,
       seniorRaterEffectiveDate,
       reviewerId,
       reviewerEffectiveDate,
@@ -165,16 +205,91 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     .filter(r => !editingRecord || r.id !== editingRecord.id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
+  // Collect any manual/external senior raters that exist across records or in active manual fields
+  const manualSeniorRaters = React.useMemo(() => {
+    const map = new Map<string, string>();
+    const searchSource = allRecords || records || [];
+    
+    searchSource.forEach(r => {
+      [r.seniorRaterId, r.raterId, r.reviewerId, r.corNewRaterId].forEach(val => {
+        if (val && val !== "-" && !searchSource.some(rec => rec.id === val)) {
+          if (!map.has(val)) {
+            map.set(val, val);
+          }
+        }
+      });
+    });
+
+    if (srManualName.trim()) {
+      const formatted = formatNameToLastFirstRank(srManualName.trim(), srManualRank.trim());
+      if (!searchSource.some(rec => rec.id === formatted)) {
+        map.set(formatted, formatted);
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [records, allRecords, srManualRank, srManualName]);
+
+  // Combine availableRaters and manualSeniorRaters into unified sorted option lists
+  const combinedRaterRoleOptions = React.useMemo(() => {
+    const list: { id: string; label: string; sortKey: string }[] = [];
+
+    availableRaters.forEach(r => {
+      const formatted = formatNameToLastFirstRank(r.name, r.rank);
+      list.push({
+        id: r.id,
+        label: `${formatted} - ${r.role}`,
+        sortKey: formatted
+      });
+    });
+
+    manualSeniorRaters.forEach(m => {
+      const formatted = formatNameToLastFirstRank(m);
+      list.push({
+        id: m,
+        label: formatted,
+        sortKey: formatted
+      });
+    });
+
+    return list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [availableRaters, manualSeniorRaters]);
+
+  const combinedRaterOptions = React.useMemo(() => {
+    const list: { id: string; label: string; sortKey: string }[] = [];
+
+    availableRaters.forEach(r => {
+      const formatted = formatNameToLastFirstRank(r.name, r.rank);
+      list.push({
+        id: r.id,
+        label: formatted,
+        sortKey: formatted
+      });
+    });
+
+    manualSeniorRaters.forEach(m => {
+      const formatted = formatNameToLastFirstRank(m);
+      list.push({
+        id: m,
+        label: formatted,
+        sortKey: formatted
+      });
+    });
+
+    return list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [availableRaters, manualSeniorRaters]);
+
   const activeVersion = editingRecord ? (editingRecord.version || "current") : (selectedVersion || "current");
   const isCurrentVersion = activeVersion === "current";
   const isProjected = activeVersion === "future";
   const isAlternate = activeVersion === "alternate";
+  const isOic = role === RatingRole.OIC || role === "OIC";
 
   return (
     <form 
       id="rating-form" 
       onSubmit={handleSubmit} 
-      className={`rounded border p-5 space-y-5 shadow-sm transition-all ${
+      className={`rounded-xl border shadow-2xl transition-all flex flex-col max-h-[88vh] sm:max-h-[82vh] overflow-hidden ${
         isProjected 
           ? "bg-blue-50 border-blue-300" 
           : isAlternate 
@@ -182,11 +297,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
             : "bg-white border-slate-200"
       }`}
     >
-      <div className={`flex justify-between items-center pb-3 border-b p-3 -mx-5 -mt-5 rounded-t ${
+      <div className={`flex justify-between items-center px-5 py-3 border-b shrink-0 ${
         isProjected 
-          ? "bg-blue-100/50 border-blue-200" 
+          ? "bg-blue-100/70 border-blue-200" 
           : isAlternate 
-            ? "bg-emerald-100/50 border-emerald-200" 
+            ? "bg-emerald-100/70 border-emerald-200" 
             : "bg-slate-50 border-slate-200"
       }`}>
         <h3 className={`text-xs font-bold uppercase tracking-widest flex items-center ${
@@ -210,7 +325,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Full Name */}
         <div className="space-y-1">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -274,7 +390,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
           <div className="flex gap-2">
             <select
               id="select-mosc"
-              value={["42S3O", "42S4O", "42S5O", "42S6O"].includes(dutyMosc) ? dutyMosc : "custom"}
+              value={COMMON_MOSCS.includes(dutyMosc) ? dutyMosc : "custom"}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val === "custom") {
@@ -285,14 +401,14 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               }}
               className="flex-1 px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
             >
-              {["42S3O", "42S4O", "42S5O", "42S6O"].map((m) => (
+              {COMMON_MOSCS.map((m) => (
                 <option key={m} value={m}>
                   {m}
                 </option>
               ))}
               <option value="custom">Other / Custom</option>
             </select>
-            {(!["42S3O", "42S4O", "42S5O", "42S6O"].includes(dutyMosc) || dutyMosc === "") && (
+            {(!COMMON_MOSCS.includes(dutyMosc) || dutyMosc === "") && (
               <input
                 id="input-custom-mosc"
                 type="text"
@@ -400,8 +516,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       </div>
 
       {/* Date Ranges */}
-      <div className="border-t border-slate-200 pt-3 space-y-2">
-        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Evaluation & Submission</h4>
+      <div className={`border-t border-slate-200 pt-3 space-y-2 ${isOic ? "opacity-60" : ""}`}>
+        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
+          <span>Evaluation & Submission</span>
+          {isOic && <span className="text-[10px] font-semibold text-slate-500 lowercase italic bg-slate-200/80 px-2 py-0.5 rounded">(Not required for OIC)</span>}
+        </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div className="space-y-1">
             <label className="text-[10px] font-medium text-slate-500 uppercase">FROM Date</label>
@@ -409,6 +528,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               id="input-from-date"
               type="date"
               value={fromDate}
+              disabled={isOic}
               onChange={(e) => {
                 const val = e.target.value;
                 setFromDate(val);
@@ -421,7 +541,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   }
                 }
               }}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+              className={`w-full px-2 py-1 border rounded text-xs font-mono focus:outline-none ${
+                isOic
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                  : "border-slate-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              }`}
             />
           </div>
           <div className="space-y-1">
@@ -430,6 +554,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               id="input-thru-date"
               type="date"
               value={thruDate}
+              disabled={isOic}
               onChange={(e) => {
                 const val = e.target.value;
                 setThruDate(val);
@@ -438,7 +563,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   setDueHqdaDate(calculatedHqda);
                 }
               }}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+              className={`w-full px-2 py-1 border rounded text-xs font-mono focus:outline-none ${
+                isOic
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                  : "border-slate-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              }`}
             />
           </div>
           <div className="space-y-1">
@@ -447,8 +576,13 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               id="input-due-hqda"
               type="date"
               value={dueHqdaDate}
+              disabled={isOic}
               onChange={(e) => setDueHqdaDate(e.target.value)}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+              className={`w-full px-2 py-1 border rounded text-xs font-mono focus:outline-none ${
+                isOic
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                  : "border-slate-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              }`}
             />
           </div>
           <div className="space-y-1">
@@ -457,6 +591,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               <select
                 id="select-submission-type"
                 value={["ANN", "COR", "CTR", "EXANN", "SR OP"].includes(submissionType) ? submissionType : "custom"}
+                disabled={isOic}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === "custom") {
@@ -465,7 +600,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                     setSubmissionType(val);
                   }
                 }}
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
+                className={`w-full px-2.5 py-1.5 border rounded text-xs font-semibold focus:outline-none ${
+                  isOic
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                    : "border-slate-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                }`}
               >
                 <option value="ANN">ANN (Annual)</option>
                 <option value="COR">COR (Change of Rater)</option>
@@ -480,8 +619,13 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   type="text"
                   placeholder="Type Code"
                   value={submissionType}
+                  disabled={isOic}
                   onChange={(e) => setSubmissionType(e.target.value.toUpperCase())}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-bold uppercase"
+                  className={`w-full px-2.5 py-1.5 border rounded text-xs font-bold uppercase focus:outline-none ${
+                    isOic
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                      : "border-slate-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                  }`}
                 />
               )}
             </div>
@@ -498,13 +642,18 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               <select
                 id="select-cor-new-rater"
                 value={corNewRaterId}
+                disabled={isOic}
                 onChange={(e) => setCorNewRaterId(e.target.value)}
-                className="w-full px-3 py-1.5 border border-amber-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white"
+                className={`w-full px-3 py-1.5 border rounded text-xs focus:outline-none ${
+                  isOic
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                    : "border-amber-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white"
+                }`}
               >
                 <option value="">-- Select New Rater --</option>
-                {availableRaters.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} ({r.rank})
+                {combinedRaterOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -517,8 +666,13 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                 id="input-cor-eff-date"
                 type="date"
                 value={corEffectiveDate}
+                disabled={isOic}
                 onChange={(e) => setCorEffectiveDate(e.target.value)}
-                className="w-full px-3 py-1.5 border border-amber-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white font-mono"
+                className={`w-full px-3 py-1.5 border rounded text-xs font-mono focus:outline-none ${
+                  isOic
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
+                    : "border-amber-200 focus:ring-1 focus:ring-amber-500 text-slate-800 bg-white"
+                }`}
               />
             </div>
           </div>
@@ -526,8 +680,11 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       </div>
 
       {/* NCOER Status Tracking */}
-      <div className="border-t border-slate-200 pt-3 space-y-2">
-        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">NCOER Status Tracking</h4>
+      <div className={`border-t border-slate-200 pt-3 space-y-2 ${isOic ? "opacity-60" : ""}`}>
+        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
+          <span>NCOER Status Tracking</span>
+          {isOic && <span className="text-[10px] font-semibold text-slate-500 lowercase italic bg-slate-200/80 px-2 py-0.5 rounded">(Not required for OIC)</span>}
+        </h4>
         <div className="grid grid-cols-1 gap-3">
           <div className="space-y-1">
             <label className="text-[10px] font-medium text-slate-500 uppercase">NCOER Status</label>
@@ -535,7 +692,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               <select
                 id="select-ncoer-status"
                 value={isCustomStatus ? "custom" : ncoerStatus}
-                disabled={!isCurrentVersion}
+                disabled={!isCurrentVersion || isOic}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === "custom") {
@@ -554,10 +711,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                     }
                   }
                 }}
-                className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 font-semibold ${
-                  !isCurrentVersion 
+                className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none font-semibold ${
+                  !isCurrentVersion || isOic
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" 
-                    : "text-slate-800 bg-slate-50/50"
+                    : "text-slate-800 bg-slate-50/50 focus:ring-1 focus:ring-amber-500"
                 }`}
               >
                 <option value="">-- Blank --</option>
@@ -577,128 +734,272 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   type="text"
                   placeholder="Enter Custom NCOER Status"
                   value={customStatusText}
-                  disabled={!isCurrentVersion}
+                  disabled={!isCurrentVersion || isOic}
                   onChange={(e) => setCustomStatusText(e.target.value)}
-                  className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                    !isCurrentVersion 
+                  className={`w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none ${
+                    !isCurrentVersion || isOic
                       ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" 
-                      : "text-slate-800 bg-slate-50/50"
+                      : "text-slate-800 bg-slate-50/50 focus:ring-1 focus:ring-amber-500"
                   }`}
                 />
               )}
 
-              {!isCurrentVersion && (
+              {isOic ? (
+                <p className="text-[10px] text-slate-500 font-medium italic mt-1 leading-normal">
+                  Evaluation dates and NCOER status tracking are disabled for OIC positions.
+                </p>
+              ) : !isCurrentVersion ? (
                 <p className="text-[10px] text-slate-500 font-medium italic mt-1 leading-normal">
                   NCOER Status is read-only in draft modeling views ({activeVersion === "future" ? "Projected" : "Alternate"}) and can only be updated from the Current roster view.
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
       </div>
 
       {/* Rating Chain */}
-      <div className="border-t border-slate-200 pt-3 space-y-2">
+      <div className="border-t border-slate-200 pt-3 space-y-3">
         <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Rating Chain Assignment</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Rater */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-slate-500 uppercase">Rater (Direct Supervisor)</label>
-            <select
-              id="select-rater"
-              value={raterId}
-              onChange={(e) => setRaterId(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
-            >
-              <option value="">-- None (Top Level) --</option>
-              {availableRaters.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} ({r.rank}) - {r.role}
-                </option>
-              ))}
-            </select>
-            {raterId && (
-              <div className="pt-1.5 space-y-0.5 animate-fade-in">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Rater Effective Date</label>
-                <input
-                  id="input-rater-eff-date"
-                  type="date"
-                  value={raterEffectiveDate}
-                  onChange={(e) => setRaterEffectiveDate(e.target.value)}
-                  className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
-                />
-              </div>
-            )}
-          </div>
+        
+        {/* If Role is Element Leader, show customized Rater and Manual Senior Rater entry section */}
+        {role === RatingRole.ELEMENT_LEADER ? (
+          <div className="p-3.5 bg-sky-50/80 border border-sky-200 rounded-md space-y-3 animate-fade-in">
+            <div>
+              <h5 className="text-[11px] font-bold text-sky-900 uppercase tracking-wider">
+                Element Leader Rating Chain
+              </h5>
+              <p className="text-[10px] text-sky-700 font-medium">
+                Assign direct Rater and enter Senior Rater details manually.
+              </p>
+            </div>
 
-          {/* Senior Rater */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-slate-500 uppercase">Senior Rater</label>
-            <select
-              id="select-senior-rater"
-              value={seniorRaterId}
-              onChange={(e) => setSeniorRaterId(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
-            >
-              <option value="">-- None --</option>
-              {availableRaters.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} ({r.rank})
-                </option>
-              ))}
-            </select>
-            {seniorRaterId && (
-              <div className="pt-1.5 space-y-0.5 animate-fade-in">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Sr Rater Effective Date</label>
-                <input
-                  id="input-senior-rater-eff-date"
-                  type="date"
-                  value={seniorRaterEffectiveDate}
-                  onChange={(e) => setSeniorRaterEffectiveDate(e.target.value)}
-                  className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
-                />
-              </div>
-            )}
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 1. Rater Selection (First) */}
+              <div className="space-y-2 bg-white p-3 rounded border border-sky-200 shadow-sm">
+                <label className="text-[10px] font-bold text-sky-900 uppercase tracking-wider block">
+                  1. Rater (Direct Supervisor)
+                </label>
+                <select
+                  id="select-rater"
+                  value={raterId}
+                  onChange={(e) => setRaterId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                >
+                  <option value="">-- None (Top Level) --</option>
+                  {combinedRaterRoleOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
 
-          {/* Reviewer */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-slate-500 uppercase">Reviewer</label>
-            <select
-              id="select-reviewer"
-              value={reviewerId}
-              onChange={(e) => setReviewerId(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
-            >
-              <option value="">-- None --</option>
-              {availableRaters.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} ({r.rank})
-                </option>
-              ))}
-            </select>
-            {reviewerId && (
-              <div className="pt-1.5 space-y-0.5 animate-fade-in">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Reviewer Effective Date</label>
-                <input
-                  id="input-reviewer-eff-date"
-                  type="date"
-                  value={reviewerEffectiveDate}
-                  onChange={(e) => setReviewerEffectiveDate(e.target.value)}
-                  className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
-                />
+                <div className="space-y-1 pt-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Rater Effective Date
+                  </label>
+                  <input
+                    id="input-rater-eff-date"
+                    type="date"
+                    value={raterEffectiveDate}
+                    onChange={(e) => setRaterEffectiveDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 bg-white font-mono"
+                  />
+                </div>
               </div>
-            )}
+
+              {/* 2. Senior Rater Manual Entry (Second) */}
+              <div className="space-y-2 bg-white p-3 rounded border border-sky-200 shadow-sm md:col-span-2">
+                <label className="text-[10px] font-bold text-sky-900 uppercase tracking-wider block">
+                  2. Senior Rater (Manual Entry)
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Rank */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Senior Rater Rank <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="flex gap-1.5">
+                      <select
+                        id="select-sr-manual-rank"
+                        value={SENIOR_RATER_RANKS.includes(srManualRank) ? srManualRank : "custom"}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "custom") {
+                            setSrManualRank("");
+                          } else {
+                            setSrManualRank(val);
+                          }
+                        }}
+                        className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      >
+                        {SENIOR_RATER_RANKS.map((rk) => (
+                          <option key={rk} value={rk}>
+                            {rk}
+                          </option>
+                        ))}
+                        <option value="custom">Other / Custom</option>
+                      </select>
+                      {!SENIOR_RATER_RANKS.includes(srManualRank) && (
+                        <input
+                          id="input-sr-manual-custom-rank"
+                          type="text"
+                          placeholder="Rank"
+                          value={srManualRank}
+                          onChange={(e) => setSrManualRank(e.target.value)}
+                          className="w-20 px-2 py-1.5 border border-slate-200 rounded text-xs text-slate-800 bg-white font-bold uppercase"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Name (Last, First) */}
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Senior Rater Name (Last, First) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="input-sr-manual-name"
+                      type="text"
+                      placeholder="e.g. Alger, Bonnie"
+                      value={srManualName}
+                      onChange={(e) => setSrManualName(e.target.value)}
+                      onBlur={() => {
+                        if (srManualName.trim()) {
+                          const formatted = formatNameToLastFirstRank(srManualName.trim()).replace(/\s*\([^)]+\)$/, "");
+                          setSrManualName(formatted);
+                        }
+                      }}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Senior Rater Effective Date */}
+                <div className="space-y-1 pt-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Senior Rater Effective Date
+                  </label>
+                  <input
+                    id="input-senior-rater-eff-date"
+                    type="date"
+                    value={seniorRaterEffectiveDate}
+                    onChange={(e) => setSeniorRaterEffectiveDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800 bg-white font-mono"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Rater */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-500 uppercase">Rater (Direct Supervisor)</label>
+              <select
+                id="select-rater"
+                value={raterId}
+                onChange={(e) => setRaterId(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              >
+                <option value="">-- None (Top Level) --</option>
+                {combinedRaterRoleOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {raterId && (
+                <div className="pt-1.5 space-y-0.5 animate-fade-in">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Rater Effective Date</label>
+                  <input
+                    id="input-rater-eff-date"
+                    type="date"
+                    value={raterEffectiveDate}
+                    onChange={(e) => setRaterEffectiveDate(e.target.value)}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Senior Rater */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-500 uppercase">Senior Rater</label>
+              <select
+                id="select-senior-rater"
+                value={seniorRaterId}
+                onChange={(e) => setSeniorRaterId(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              >
+                <option value="">-- None --</option>
+                {combinedRaterOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {seniorRaterId && (
+                <div className="pt-1.5 space-y-0.5 animate-fade-in">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Sr Rater Effective Date</label>
+                  <input
+                    id="input-senior-rater-eff-date"
+                    type="date"
+                    value={seniorRaterEffectiveDate}
+                    onChange={(e) => setSeniorRaterEffectiveDate(e.target.value)}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Reviewer */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-500 uppercase">Reviewer</label>
+              <select
+                id="select-reviewer"
+                value={reviewerId}
+                onChange={(e) => setReviewerId(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              >
+                <option value="">-- None --</option>
+                {combinedRaterOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {reviewerId && (
+                <div className="pt-1.5 space-y-0.5 animate-fade-in">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Reviewer Effective Date</label>
+                  <input
+                    id="input-reviewer-eff-date"
+                    type="date"
+                    value={reviewerEffectiveDate}
+                    onChange={(e) => setReviewerEffectiveDate(e.target.value)}
+                    className="w-full px-2 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
       </div>
 
       {/* Buttons */}
-      <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-200">
+      <div className={`flex justify-end gap-2.5 px-5 py-3 border-t shrink-0 ${
+        isProjected 
+          ? "bg-blue-100/40 border-blue-200" 
+          : isAlternate 
+            ? "bg-emerald-100/40 border-emerald-200" 
+            : "bg-slate-50/90 border-slate-200"
+      }`}>
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+          className="px-3.5 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 bg-white transition-colors"
           id="btn-form-cancel"
         >
           Cancel

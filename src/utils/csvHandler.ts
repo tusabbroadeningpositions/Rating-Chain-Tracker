@@ -419,7 +419,7 @@ export function parseCSV(csvText: string): ArmyRatingRecord[] {
       if (partialMatch) return partialMatch.id;
     }
 
-    return "";
+    return searchName.trim();
   };
 
   const finalRecords: ArmyRatingRecord[] = rawRows.map(raw => {
@@ -486,8 +486,9 @@ export function generateTemplateCSV(records: ArmyRatingRecord[] = []): string {
   const lines = [headers.join(",")];
 
   const helperGetRecordName = (id: string) => {
+    if (!id) return "";
     const r = records.find(rec => rec.id === id);
-    if (!r) return "";
+    if (!r) return `"${id}"`;
     return `"${r.rank} ${r.name}"`;
   };
 

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { ArmyRatingRecord, RatingRole, RatingScheme } from "./types";
+import { ArmyRatingRecord, RatingRole, RatingScheme, formatNameToLastFirstRank } from "./types";
 import { INITIAL_RECORDS } from "./sampleData";
 import RatingForm from "./components/RatingForm";
 import RatingTable from "./components/RatingTable";
@@ -315,7 +315,13 @@ export default function App() {
   const getRaterNameInApp = (raterId: string) => {
     if (!raterId || raterId === "-") return "-";
     const r = records.find(rec => rec.id === raterId);
-    return r ? `${r.rank} ${r.name}` : raterId;
+    if (r) {
+      if (r.rank) {
+        return `${r.name} (${r.rank})`;
+      }
+      return r.name;
+    }
+    return formatNameToLastFirstRank(raterId);
   };
 
   // Add or edit a record
@@ -1056,8 +1062,8 @@ export default function App() {
               
               {/* Form Modal overlay */}
               {isFormOpen && (
-                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[200] overflow-y-auto animate-fade-in print:hidden">
-                  <div className="w-full max-w-3xl">
+                <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-start sm:items-center p-3 sm:p-4 z-[200] overflow-y-auto animate-fade-in print:hidden">
+                  <div className="w-full max-w-3xl my-auto py-2 sm:py-4">
                     <RatingForm
                       records={filteredRecords}
                       allRecords={records}
@@ -1139,8 +1145,8 @@ export default function App() {
       )}
 
       {pendingRaterChange && (
-        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-center p-4 z-[220] overflow-y-auto animate-fade-in print:hidden">
-          <div className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+        <div className="fixed inset-0 bg-slate-900/75 flex justify-center items-start sm:items-center p-3 sm:p-4 z-[220] overflow-y-auto animate-fade-in print:hidden">
+          <div className="w-full max-w-lg bg-white rounded-lg shadow-2xl border border-slate-200 overflow-hidden transform transition-all my-auto">
             {/* Header */}
             <div className="bg-amber-500 px-5 py-4 flex items-center gap-3 text-slate-900">
               <AlertTriangle className="w-6 h-6 text-slate-900 animate-bounce" />

@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion } from "motion/react";
-import { ArmyRatingRecord, RatingRole } from "../types";
+import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar } from "lucide-react";
@@ -201,9 +201,16 @@ export default function OrgChartPreview({
 
   // Render Card Details panel
   const getRaterName = (raterId: string) => {
-    if (!raterId) return "None";
-    const r = records.find(rec => rec.id === raterId);
-    return r ? `${r.rank} ${r.name}` : raterId;
+    if (!raterId || raterId === "-") return "None";
+    const searchSource = allRecords || records;
+    const r = searchSource.find(rec => rec.id === raterId);
+    if (r) {
+      if (r.rank) {
+        return `${r.name} (${r.rank})`;
+      }
+      return r.name;
+    }
+    return formatNameToLastFirstRank(raterId);
   };
 
   return (
