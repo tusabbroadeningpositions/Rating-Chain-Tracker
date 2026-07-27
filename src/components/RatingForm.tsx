@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
 import { add90Days, calculateThruDate } from "../utils/dateUtils";
-import { Plus, Check, X, RotateCcw } from "lucide-react";
+import { Plus, Check, X, RotateCcw, ChevronDown } from "lucide-react";
 
 interface RatingFormProps {
   records: ArmyRatingRecord[];
@@ -76,30 +76,38 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       };
 
       const ncoerRecordToUse = getRecordForNcoerStatus() || editingRecord;
+      
+      const clean = (s: string) => s.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
+      const findIdByName = (val: string) => {
+        if (!val) return "";
+        
+        const searchPool = allRecords && allRecords.length > 0 ? allRecords : records;
+        
+        // If it's already a valid ID in our pool, return it
+        if (searchPool.some(r => r.id === val)) return val;
+        
+        // If it looks like a short UUID/id already, just return it
+        if (val.length < 15 && /^[a-z0-9]+$/.test(val)) return val;
+        
+        const cVal = clean(val);
+        const match = searchPool.find(r => clean(r.name) === cVal || clean(`${r.rank} ${r.name}`) === cVal);
+        return match ? match.id : val;
+      };
+
       setNcoerStatus(ncoerRecordToUse.ncoerStatus || "");
       setNcoerStatusDate(ncoerRecordToUse.ncoerStatusDate || "");
       setIsCustomStatus(!!ncoerRecordToUse.isCustomStatus);
       setCustomStatusText(ncoerRecordToUse.isCustomStatus ? ncoerRecordToUse.ncoerStatus || "" : "");
       
-      setLateRaterId(ncoerRecordToUse.lateRaterId || editingRecord.raterId || "");
-      setLateSeniorRaterId(ncoerRecordToUse.lateSeniorRaterId || editingRecord.seniorRaterId || "");
-      
-      const clean = (s: string) => s.toLowerCase().replace(/,/g, '').replace(/\s+/g, ' ').trim();
-      const findIdByName = (val: string) => {
-        if (!val) return "";
-        // If it looks like a short UUID/id already, just return it
-        if (val.length < 15 && /^[a-z0-9]+$/.test(val)) return val;
-        
-        const cVal = clean(val);
-        const match = records.find(r => clean(r.name) === cVal || clean(`${r.rank} ${r.name}`) === cVal);
-        return match ? match.id : val;
-      };
+      setLateRaterId(findIdByName(ncoerRecordToUse.lateRaterId || editingRecord.raterId || ""));
+      setLateSeniorRaterId(findIdByName(ncoerRecordToUse.lateSeniorRaterId || editingRecord.seniorRaterId || ""));
 
       setRaterId(findIdByName(editingRecord.raterId));
       setRaterEffectiveDate(editingRecord.raterEffectiveDate || "");
       
       const rawSeniorRater = editingRecord.seniorRaterId || "";
-      const matchedSrRecord = records.find(r => r.id === rawSeniorRater);
+      const searchSource = allRecords && allRecords.length > 0 ? allRecords : records;
+      const matchedSrRecord = searchSource.find(r => r.id === rawSeniorRater);
       if (matchedSrRecord) {
         setSeniorRaterId(matchedSrRecord.id);
         setSrManualRank(matchedSrRecord.rank || "MAJ");
@@ -207,10 +215,26 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     onSave(savedRecord);
   };
 
-  // Filter possible raters/reviewers to avoid assigning oneself or circular structures, sorted alphabetically by last name
-  const availableRaters = records
-    .filter(r => !editingRecord || r.id !== editingRecord.id)
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  // Filter possible raters/reviewers to avoid assigning oneself or circular structures, sorted alphabetically by last name, de-duplicated by name
+  const availableRaters = React.useMemo(() => {
+    const rawList = allRecords && allRecords.length > 0 ? allRecords : records;
+    const filtered = rawList.filter(r => !editingRecord || r.id !== editingRecord.id);
+    
+    // De-duplicate by normalized name, preferring version === "current" || !version
+    const map = new Map<string, ArmyRatingRecord>();
+    filtered.forEach(r => {
+      const key = r.name.trim().toLowerCase();
+      if (!key) return;
+      const isCurrent = r.version === "current" || !r.version;
+      const existing = map.get(key);
+      if (!existing || (!existing.version || existing.version !== "current" && isCurrent)) {
+        map.set(key, r);
+      }
+    });
+    
+    return Array.from(map.values())
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [records, allRecords, editingRecord]);
 
   // Collect any manual/external senior raters that exist across records or in active manual fields
   const manualSeniorRaters = React.useMemo(() => {
@@ -332,7 +356,13 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 relative group/scroll">
+        <div className="sticky top-0 right-0 z-20 flex flex-col items-end pointer-events-none">
+          <div className="bg-white/80 backdrop-blur-sm px-2 py-1 rounded-bl-lg border-b border-l border-slate-200 flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-500">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Scroll for more</span>
+            <ChevronDown className="w-3 h-3 text-slate-300 animate-bounce" />
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Full Name */}
         <div className="space-y-1">

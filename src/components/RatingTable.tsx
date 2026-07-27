@@ -11,7 +11,7 @@ import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../type
 import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
 import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -163,6 +163,22 @@ export default function RatingTable({
     return formatNameToLastFirstRank(raterId);
   };
 
+  const getRaterNameOnly = (raterId: string) => {
+    if (!raterId || raterId === "-") return "-";
+    const searchSource = allRecords || records;
+    const found = searchSource.find(rec => rec.id === raterId);
+    if (found) return found.name.trim().toLowerCase();
+    return raterId.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+  };
+
+  const getReviewerNameOnly = (reviewerId: string) => {
+    if (!reviewerId || reviewerId === "-") return "N/A";
+    const searchSource = allRecords || records;
+    const found = searchSource.find(rec => rec.id === reviewerId);
+    if (found) return found.name.trim().toLowerCase();
+    return reviewerId.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+  };
+
   const performOverwrite = (current: ArmyRatingRecord, projected: ArmyRatingRecord, extraUpdates: Partial<ArmyRatingRecord> = {}) => {
     // 1. Prepare the updated current record
     const updated: ArmyRatingRecord = {
@@ -293,50 +309,69 @@ export default function RatingTable({
     return Array.from(ratersSet).sort();
   }, [records]);
 
-  // Soldier options for dropdowns - Includes all soldiers and anyone referenced in rating chains
+  // Soldier options for dropdowns - Includes all soldiers and anyone referenced in rating chains, de-duplicated by name
   const soldierOptions = useMemo(() => {
-    const optionsMap = new Map<string, { id: string; label: string; sortKey: string }>();
     const source = allRecords || records;
     
-    // Add all current soldiers from source
-    source
-      .filter(r => r.version === "current" || !r.version)
-      .forEach(r => {
-        if (!optionsMap.has(r.id)) {
-          const formatted = formatNameToLastFirstRank(r.name, r.rank);
-          const namePart = formatted.split(" (")[0];
-          optionsMap.set(r.id, {
-            id: r.id,
-            label: formatted,
-            sortKey: namePart
-          });
-        }
-      });
-
-    // Also include anyone referenced as a rater or senior rater in the full source
+    // 1. Gather all potential candidates
+    const allCandidates: { id: string; name: string; rank: string; isCurrent: boolean }[] = [];
+    
     source.forEach(r => {
-      const idsToCheck = [r.raterId, r.seniorRaterId].filter(id => id && id !== "-" && !optionsMap.has(id));
-      idsToCheck.forEach(id => {
-        const found = source.find(x => x.id === id);
-        if (found) {
-          const formatted = formatNameToLastFirstRank(found.name, found.rank);
-          const namePart = formatted.split(" (")[0];
-          optionsMap.set(id!, {
-            id: id!,
-            label: formatted,
-            sortKey: namePart
-          });
-        } else {
-          const nameLabel = getRaterName(id!);
-          if (nameLabel && nameLabel !== "-") {
-            const sortKey = nameLabel.split(" (")[0];
-            optionsMap.set(id!, { id: id!, label: nameLabel, sortKey });
+      const isCurrent = r.version === "current" || !r.version;
+      allCandidates.push({
+        id: r.id,
+        name: r.name,
+        rank: r.rank || "",
+        isCurrent
+      });
+    });
+    
+    source.forEach(r => {
+      [r.raterId, r.seniorRaterId].forEach(id => {
+        if (id && id !== "-" && !allCandidates.some(c => c.id === id)) {
+          const found = source.find(x => x.id === id);
+          if (found) {
+            allCandidates.push({
+              id: found.id,
+              name: found.name,
+              rank: found.rank || "",
+              isCurrent: found.version === "current" || !found.version
+            });
+          } else {
+            allCandidates.push({
+              id,
+              name: id,
+              rank: "",
+              isCurrent: false
+            });
           }
         }
       });
     });
-
-    return Array.from(optionsMap.values())
+    
+    // 2. Filter candidates to be unique by normalized name, preferring current records
+    const uniqueMap = new Map<string, { id: string; label: string; sortKey: string; isCurrent: boolean }>();
+    
+    allCandidates.forEach(cand => {
+      const normalizedName = cand.name.trim().toLowerCase();
+      if (!normalizedName) return;
+      
+      const formatted = formatNameToLastFirstRank(cand.name, cand.rank);
+      const namePart = formatted.split(" (")[0];
+      const sortKey = namePart;
+      
+      const existing = uniqueMap.get(normalizedName);
+      if (!existing || (!existing.isCurrent && cand.isCurrent)) {
+        uniqueMap.set(normalizedName, {
+          id: cand.id,
+          label: formatted,
+          sortKey,
+          isCurrent: cand.isCurrent
+        });
+      }
+    });
+    
+    return Array.from(uniqueMap.values())
       .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   }, [records, allRecords]);
 
@@ -1525,19 +1560,24 @@ export default function RatingTable({
     let curVal = currentRecord[field];
     let histVal = historyRecord[field];
     
-    // If it's a rater field, compare by resolved name instead of ID because IDs change between versions
-    if (field === 'raterId' || field === 'seniorRaterId' || field === 'reviewerId') {
-      curVal = getRaterName(curVal as string);
-      // For history records, they might not have the ID in the allRecords list if they were deleted
-      // but getRaterName handles that gracefully.
-      histVal = getRaterName(histVal as string);
+    // If it's a rater field, compare by resolved name (ignoring rank) instead of ID because IDs change between versions
+    if (field === 'raterId' || field === 'seniorRaterId') {
+      curVal = getRaterNameOnly(curVal as string);
+      histVal = getRaterNameOnly(histVal as string);
+    } else if (field === 'reviewerId') {
+      curVal = getReviewerNameOnly(curVal as string);
+      histVal = getReviewerNameOnly(histVal as string);
+    } else if (field === 'dueHqda') {
+      // Compare computed HQDA dates
+      curVal = currentRecord.dueHqda || add90Days(currentRecord.thru);
+      histVal = historyRecord.dueHqda || add90Days(historyRecord.thru);
     }
     
     // Normalize values for comparison
     const normalize = (val: any) => (val === undefined || val === null ? "" : String(val).trim());
     
     if (normalize(curVal) !== normalize(histVal)) {
-      return "ring-2 ring-yellow-400 ring-inset bg-yellow-100";
+      return "ring-2 ring-yellow-400 ring-inset";
     }
     return "";
   };
@@ -1757,7 +1797,11 @@ export default function RatingTable({
   };
 
   const handleShiftYear = (r: ArmyRatingRecord) => {
-    setLateShiftPromptRecord(r);
+    if (selectedVersion !== "current") {
+      confirmShiftYear(r, true);
+    } else {
+      setLateShiftPromptRecord(r);
+    }
   };
 
   const confirmShiftYear = (r: ArmyRatingRecord, hasBeenSubmitted: boolean) => {
@@ -1933,15 +1977,17 @@ export default function RatingTable({
               <FileDown className="w-3.5 h-3.5" />
               Export Excel (.xlsx)
             </button>
-            <button
-              onClick={handleExportNcoerReport}
-              className="px-3 py-1.5 text-white bg-slate-800 hover:bg-slate-900 border border-slate-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-              id="btn-export-ncoer-pdf"
-              title="Exports a professional PDF report showing NCOERs due within 30 days or past due"
-            >
-              <FileDown className="w-3.5 h-3.5 text-amber-500" />
-              Export NCOER Report (PDF)
-            </button>
+            {selectedVersion === "current" && (
+              <button
+                onClick={handleExportNcoerReport}
+                className="px-3 py-1.5 text-white bg-slate-800 hover:bg-slate-900 border border-slate-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                id="btn-export-ncoer-pdf"
+                title="Exports a professional PDF report showing NCOERs due within 30 days or past due"
+              >
+                <FileDown className="w-3.5 h-3.5 text-amber-500" />
+                Export NCOER Report (PDF)
+              </button>
+            )}
             {readOnly && (
               <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
                 ⚠️ View-Only
@@ -2076,15 +2122,17 @@ export default function RatingTable({
                         >
                           Alternate
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsShowingReportPreview(true)}
-                          className="ml-1 px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded shadow-sm transition-all flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider"
-                          title="Preview NCOER Monitoring Report"
-                        >
-                          <FileText className="w-3 h-3" />
-                          NCOER Report
-                        </button>
+                        {selectedVersion === "current" && (
+                          <button
+                            type="button"
+                            onClick={() => setIsShowingReportPreview(true)}
+                            className="ml-1 px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded shadow-sm transition-all flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider"
+                            title="Preview NCOER Monitoring Report"
+                          >
+                            <FileText className="w-3 h-3" />
+                            NCOER Report
+                          </button>
+                        )}
                       </div>
                       {selectedVersion === "current" && (
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
@@ -2172,32 +2220,31 @@ export default function RatingTable({
                   const isCurrent = selectedVersion === "current";
                   const currentSoldier = isCurrent ? null : currentRecords.find(cr => cr.name.trim().toLowerCase() === r.name.trim().toLowerCase());
                   
-                  const isRankDiff = !isCurrent && !!currentSoldier && r.rank !== currentSoldier.rank;
-                  const isElementDiff = !isCurrent && !!currentSoldier && r.element !== currentSoldier.element;
-                  const isMoscDiff = !isCurrent && !!currentSoldier && r.dutyMosc !== currentSoldier.dutyMosc;
+                  const normalize = (val: any) => (val === undefined || val === null ? "" : String(val).trim());
+
+                  const isRankDiff = !isCurrent && !!currentSoldier && normalize(r.rank) !== normalize(currentSoldier.rank);
+                  const isElementDiff = !isCurrent && !!currentSoldier && normalize(r.element) !== normalize(currentSoldier.element);
+                  const isMoscDiff = !isCurrent && !!currentSoldier && normalize(r.dutyMosc) !== normalize(currentSoldier.dutyMosc);
                   const isRoleDiff = !isCurrent && !!currentSoldier && (
-                    r.role !== currentSoldier.role || 
-                    (r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle !== currentSoldier.keyLeaderTitle)
+                    normalize(r.role) !== normalize(currentSoldier.role) || 
+                    (r.role === RatingRole.KEY_LEADER && normalize(r.keyLeaderTitle) !== normalize(currentSoldier.keyLeaderTitle))
                   );
                   const isDatesDiff = !isCurrent && !!currentSoldier && (
-                    r.from !== currentSoldier.from || 
-                    r.thru !== currentSoldier.thru || 
-                    r.dueHqda !== currentSoldier.dueHqda
+                    normalize(r.from) !== normalize(currentSoldier.from) || 
+                    normalize(r.thru) !== normalize(currentSoldier.thru) || 
+                    (r.dueHqda || add90Days(r.thru)) !== (currentSoldier.dueHqda || add90Days(currentSoldier.thru))
                   );
                   const isRaterDiff = !isCurrent && !!currentSoldier && (
-                    getRaterNameInVersion(r.raterId, records) !== getRaterNameInVersion(currentSoldier.raterId, currentRecords) ||
-                    (r.raterEffectiveDate || "") !== (currentSoldier.raterEffectiveDate || "")
+                    getRaterNameOnly(r.raterId) !== getRaterNameOnly(currentSoldier.raterId)
                   );
                   const isSeniorRaterDiff = !isCurrent && !!currentSoldier && (
-                    getRaterNameInVersion(r.seniorRaterId, records) !== getRaterNameInVersion(currentSoldier.seniorRaterId, currentRecords) ||
-                    (r.seniorRaterEffectiveDate || "") !== (currentSoldier.seniorRaterEffectiveDate || "")
+                    getRaterNameOnly(r.seniorRaterId) !== getRaterNameOnly(currentSoldier.seniorRaterId)
                   );
                   const isReviewerDiff = !isCurrent && !!currentSoldier && (
-                    getReviewerNameInVersion(r.reviewerId, records) !== getReviewerNameInVersion(currentSoldier.reviewerId, currentRecords) ||
-                    (r.reviewerEffectiveDate || "") !== (currentSoldier.reviewerEffectiveDate || "")
+                    getReviewerNameOnly(r.reviewerId) !== getReviewerNameOnly(currentSoldier.reviewerId)
                   );
                   const isSubmissionDiff = !isCurrent && !!currentSoldier && (
-                    (r.submissionType || "ANN") !== (currentSoldier.submissionType || "ANN")
+                    normalize(r.submissionType || "ANN") !== normalize(currentSoldier.submissionType || "ANN")
                   );
 
                   const mismatchInfo = getSeniorRaterMismatchInfo(r);
@@ -2237,47 +2284,49 @@ export default function RatingTable({
                       }`}>
                         <div className="flex flex-col">
                           <span className="leading-tight">{r.name}</span>
-                          {selectedVersion === "current" && (
+                          {(selectedVersion === "current" || selectedVersion === "future") && (
                             <button 
                               onClick={(e) => { e.stopPropagation(); toggleHistory(r.id); }}
-                              className={`mt-1.5 flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[8px] uppercase font-bold tracking-tighter transition-all w-fit ${
+                              className={`mt-1.5 flex items-center justify-center gap-1 px-2 py-0.5 rounded text-[8px] uppercase font-bold tracking-tighter transition-all w-fit whitespace-nowrap ${
                                 expandedHistoryRecordId === r.id 
                                   ? "bg-slate-800 text-white shadow-sm" 
-                                  : "bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-800"
+                                  : selectedVersion === "future"
+                                    ? "bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-800"
+                                    : "bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-800"
                               }`}
-                              title="View Change History"
+                              title={selectedVersion === "current" ? "View Projected / History" : "View Current Version Reference"}
                             >
                               <History className="w-2.5 h-2.5" />
-                              Projected / History
+                              {selectedVersion === "current" ? "Projected / History" : "View Current"}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                             </button>
                           )}
                         </div>
                       </td>
                       {/* Rank */}
-                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-50/20" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isRankDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
                           {r.rank}
                         </span>
                       </td>
                       {/* Element */}
-                      <td className={`px-3 py-2 text-slate-600 font-medium border-r border-slate-200 ${isElementDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-3 py-2 text-slate-600 font-medium border-r border-slate-200 ${isElementDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         {r.element}
                       </td>
                       {/* MOSC */}
-                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isMoscDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 text-center ${isMoscDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <span className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 font-mono text-[10px] font-bold rounded">
                           {r.dutyMosc}
                         </span>
                       </td>
                       {/* Principal Duty Title */}
-                      <td className={`px-3 py-2 border-r border-slate-200 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
                           {r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role}
                         </span>
                       </td>
                       {/* Dates */}
-                      <td className={`px-3 py-2 border-r border-slate-200 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-3 py-2 border-r border-slate-200 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <div className="font-medium font-mono text-slate-600 flex flex-wrap gap-1 items-center leading-tight">
                           <span>{r.from} to</span>
                           <span className="px-1 rounded border border-transparent">
@@ -2289,7 +2338,7 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <div className="font-semibold text-slate-800 leading-tight">
                           {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId 
                             ? getRaterName(r.lateRaterId) 
@@ -2306,9 +2355,9 @@ export default function RatingTable({
                       {/* Senior Rater */}
                       <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         mismatchInfo 
-                          ? "ring-2 ring-rose-500 ring-inset relative bg-rose-100" 
+                          ? "ring-2 ring-rose-500 ring-inset relative" 
                           : isSeniorRaterDiff 
-                            ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" 
+                            ? "ring-2 ring-yellow-400 ring-inset relative" 
                             : ""
                       }`}>
                         <div className="flex items-start justify-between gap-1">
@@ -2350,9 +2399,9 @@ export default function RatingTable({
                       {/* Reviewer */}
                       <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         reviewerMismatchInfo 
-                          ? "ring-2 ring-purple-500 ring-inset relative bg-purple-100" 
+                          ? "ring-2 ring-purple-500 ring-inset relative" 
                           : isReviewerDiff 
-                            ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" 
+                            ? "ring-2 ring-yellow-400 ring-inset relative" 
                             : ""
                       }`}>
                         <div className="flex items-start justify-between gap-1">
@@ -2386,7 +2435,7 @@ export default function RatingTable({
                         )}
                       </td>
                       {/* Submission Type */}
-                      <td className={`px-1 py-2 text-slate-700 border-r border-slate-200 text-center ${isSubmissionDiff ? "ring-2 ring-yellow-400 ring-inset relative bg-yellow-100" : ""}`}>
+                      <td className={`px-1 py-2 text-slate-700 border-r border-slate-200 text-center ${isSubmissionDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <div className="flex flex-col items-center justify-center">
                           {r.submissionType === "COR" && (r.corNewRaterId || r.corEffectiveDate) ? (
                             <div className="flex flex-col items-center">
@@ -2549,23 +2598,19 @@ export default function RatingTable({
                       <tr className="bg-slate-100 border-b border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
                         <td colSpan={selectedVersion === "current" ? 12 : 11} className="px-0 py-0">
                           <div className="pl-12 pr-6 py-4 bg-slate-100 shadow-inner border-l-4 border-slate-400">
-                            <div className="flex items-center gap-2 mb-4">
-                              <div className="p-1.5 bg-slate-200 rounded-full">
-                                <History className="w-4 h-4 text-slate-600" />
-                              </div>
-                              <div>
-                                <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-tight leading-none">Record Change History</h4>
-                                <p className="text-[10px] text-slate-500 font-medium mt-1">Viewing all previous snapshots for <span className="text-slate-700 font-bold">{r.name}</span></p>
-                              </div>
-                              {isHistoryLoading && (
-                                <div className="ml-4 flex items-center gap-2 px-2 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
-                                  <RefreshCw className="w-3 h-3 text-emerald-500 animate-spin" />
-                                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Syncing History...</span>
+                            {selectedVersion === "current" ? (
+                              <>
+                                <div className="flex items-center gap-2 mb-4">
+                                  <div className="p-1.5 bg-blue-100 rounded-full border border-blue-200">
+                                    <Sparkles className="w-4 h-4 text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-[12px] font-black text-blue-800 uppercase tracking-widest leading-none">Projected Version</h4>
+                                    <p className="text-[9px] text-blue-500 font-bold mt-1 uppercase tracking-tighter italic">Draft model from the "Projected" roster profile</p>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
 
-                            <div className="space-y-4">
+                            <div className="space-y-6">
                               {/* Projected Version Inclusion */}
                               {(() => {
                                 const projected = allRecords.find(pr => 
@@ -2574,7 +2619,17 @@ export default function RatingTable({
                                   pr.rank.toLowerCase() === r.rank.toLowerCase()
                                 );
                                 
-                                if (!projected) return null;
+                                if (!projected) return (
+                                  <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center">
+                                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest italic">No Projected Draft found for this soldier</p>
+                                     <button 
+                                      onClick={() => handleShiftYear(r)}
+                                      className="mt-2 text-[10px] font-black text-blue-600 hover:underline uppercase tracking-tight"
+                                     >
+                                      Create Projected Version
+                                     </button>
+                                  </div>
+                                );
                                 
                                 return (
                                   <div className="bg-blue-50 border border-blue-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md ring-1 ring-blue-300">
@@ -2582,13 +2637,7 @@ export default function RatingTable({
                                       <div className="flex items-center gap-3">
                                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
                                         <div className="flex items-center gap-2">
-                                          <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Projected Version</span>
-                                          <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded border border-blue-200 shadow-sm">
-                                            <Info className="w-3 h-3 text-blue-500" />
-                                            <span className="text-[9px] font-bold text-blue-600 uppercase tracking-tight italic">
-                                              Current state in "Projected" roster profile
-                                            </span>
-                                          </div>
+                                          <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Active Projected Draft</span>
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2">
@@ -2693,8 +2742,35 @@ export default function RatingTable({
                                 );
                               })()}
 
-                              {recordHistory.map((hist, hIdx) => (
-                                <div key={hist.id || hist.historyId || `hist-${hIdx}`} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md">
+                              {/* Snapshot History Section */}
+                              <div className="pt-4 border-t border-slate-200">
+                                <div className="flex items-center gap-2 mb-4">
+                                  <div className="p-1.5 bg-slate-200 rounded-full">
+                                    <History className="w-4 h-4 text-slate-600" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-widest leading-none">Record Change History</h4>
+                                    <p className="text-[10px] text-slate-500 font-medium mt-1 uppercase tracking-tighter italic">Verified historical snapshots for <span className="text-slate-700 font-bold">{r.name}</span></p>
+                                  </div>
+                                  {isHistoryLoading && (
+                                    <div className="ml-4 flex items-center gap-2 px-2 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
+                                      <RefreshCw className="w-3 h-3 text-emerald-500 animate-spin" />
+                                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Syncing...</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-4">
+                                  {recordHistory.length === 0 ? (
+                                    <div className="bg-slate-50/50 border border-slate-200 rounded-lg p-8 text-center">
+                                       <History className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                                       <p className="text-xs text-slate-400 font-bold uppercase tracking-widest italic leading-tight">
+                                          No historical snapshots recorded yet.<br/>
+                                          Snapshots are created when records are updated.
+                                       </p>
+                                    </div>
+                                  ) : recordHistory.map((hist, hIdx) => (
+                                    <div key={hist.id || hist.historyId || `hist-${hIdx}`} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md">
                                   <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                       <div className={`w-2.5 h-2.5 rounded-full ${hIdx === 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}></div>
@@ -2865,10 +2941,118 @@ export default function RatingTable({
                                   </div>
                                 </div>
                               ))}
-                            </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                                <div className="flex items-center gap-2 mb-4">
+                                  <div className="p-1.5 bg-slate-200 rounded-full border border-slate-300">
+                                    <History className="w-4 h-4 text-slate-600" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-[12px] font-black text-slate-800 uppercase tracking-widest leading-none">Current Version Reference</h4>
+                                    <p className="text-[9px] text-slate-500 font-bold mt-1 uppercase tracking-tighter italic">Source data from the "Current" roster profile</p>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-6">
+                                  {(() => {
+                                    const current = allRecords?.find(cr => 
+                                      (cr.version === "current" || !cr.version) && 
+                                      cr.name.toLowerCase() === r.name.toLowerCase()
+                                    );
+                                    
+                                    if (!current) return (
+                                      <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center">
+                                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest italic">No matching record found in Current roster</p>
+                                      </div>
+                                    );
+                                    
+                                    return (
+                                      <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden transition-all hover:shadow-md ring-1 ring-slate-200">
+                                        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-slate-400 animate-pulse"></div>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">Live Current Version</span>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onEdit(current);
+                                              }}
+                                              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-black rounded border border-slate-900 transition-all uppercase tracking-tight shadow-md active:scale-95"
+                                            >
+                                              <Edit2 className="w-3.5 h-3.5" />
+                                              Edit Current Record
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <div className="overflow-x-auto scrollbar-thin">
+                                          <table className="w-full text-left text-[10px] border-collapse">
+                                            <thead>
+                                              <tr className="bg-slate-50 text-[9px] text-slate-400 font-black uppercase tracking-tighter border-b border-slate-100">
+                                                <th className="px-3 py-2 border-r border-slate-100">Name</th>
+                                                <th className="px-3 py-2 border-r border-slate-100 text-center">Rank</th>
+                                                <th className="px-3 py-2 border-r border-slate-100">Element</th>
+                                                <th className="px-3 py-2 border-r border-slate-100 text-center">MOSC</th>
+                                                <th className="px-3 py-2 border-r border-slate-100">Duty Title</th>
+                                                <th className="px-3 py-2 border-r border-slate-100">Rating Dates</th>
+                                                <th className="px-3 py-2 border-r border-slate-100">Rater</th>
+                                                <th className="px-3 py-2 border-r border-slate-100">Senior Rater</th>
+                                                <th className="px-3 py-2 text-center">Reviewer</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              <tr className="bg-white hover:bg-slate-50 transition-colors">
+                                                <td className={`px-3 py-3 border-r border-slate-100 font-bold text-slate-800 ${getDiffClass(r, current, 'name')}`}>
+                                                  {current.name}
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 text-center ${getDiffClass(r, current, 'rank')}`}>
+                                                  <span className="px-1.5 py-0.5 bg-slate-50 rounded border border-slate-200 font-mono font-bold text-slate-700">{current.rank}</span>
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 text-slate-600 font-medium ${getDiffClass(r, current, 'element')}`}>
+                                                  {current.element}
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 text-center ${getDiffClass(r, current, 'dutyMosc')}`}>
+                                                  <span className="px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200 text-amber-800 font-mono font-bold">{current.dutyMosc}</span>
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'role')}`}>
+                                                  <span className="text-[10px] font-medium text-slate-700">{current.role}</span>
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 font-mono text-slate-500 ${getDiffClass(r, current, 'from') || getDiffClass(r, current, 'thru')}`}>
+                                                  <div className="flex flex-col leading-tight">
+                                                    <span>F: {current.from}</span>
+                                                    <span>T: {current.thru}</span>
+                                                  </div>
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'raterId')}`}>
+                                                  <div className="font-bold text-slate-700">{getRaterName(current.raterId)}</div>
+                                                </td>
+                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'seniorRaterId')}`}>
+                                                  <div className="font-bold text-slate-700">{getRaterName(current.seniorRaterId)}</div>
+                                                </td>
+                                                <td className={`px-3 py-3 ${getDiffClass(r, current, 'reviewerId')}`}>
+                                                  <div className="font-bold text-slate-700">{getReviewerName(current.reviewerId)}</div>
+                                                </td>
+                                              </tr>
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </>
+                            )}
                           </div>
-                        </td>
-                      </tr>
+                      </td>
+                    </tr>
                     )}
                   </React.Fragment>
                   );
@@ -3263,11 +3447,6 @@ export default function RatingTable({
                             daysColor = "text-amber-600";
                           }
 
-                          if (item.isLate) {
-                            daysText = "HISTORICAL LATE";
-                            daysColor = "text-slate-400";
-                          }
-
                           const helperGetName = (id: string) => {
                             if (!id || id === "-") return "—";
                             const rec = allRecords?.find(x => x.id === id);
@@ -3488,7 +3667,13 @@ export default function RatingTable({
       {/* Sequential Late Mode Setup Modal for Batch */}
       {batchLateSetupIndex >= 0 && batchLateSetupIndex < batchPromoteIncomplete.length && (
         <div className="fixed inset-0 z-[240] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 relative">
+            <button 
+              onClick={() => setBatchLateSetupIndex(-1)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
             <div className="p-8">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-4">
@@ -3653,7 +3838,13 @@ export default function RatingTable({
       {/* Manual Late NCOER Modal */}
       {manualLateRecord && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 relative">
+            <button 
+              onClick={() => setManualLateRecord(null)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all z-10"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-3 bg-amber-100 rounded-full">
@@ -3738,8 +3929,14 @@ export default function RatingTable({
       {/* Clear Late Status Modal */}
       {clearingLateRecord && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
-            <div className="p-6">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 flex flex-col max-h-[85vh] relative">
+            <button 
+              onClick={() => setClearingLateRecord(null)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all z-10"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="p-6 overflow-y-auto">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-3 bg-rose-100 rounded-full">
                   <AlertTriangle className="w-5 h-5 text-rose-600" />
