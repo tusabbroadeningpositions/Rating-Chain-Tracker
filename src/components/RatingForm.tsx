@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
 import { add90Days, calculateThruDate } from "../utils/dateUtils";
-import { Plus, Check, X, RotateCcw, ChevronDown } from "lucide-react";
+import { Plus, Check, X, RotateCcw, ChevronDown, AlertTriangle } from "lucide-react";
 
 interface RatingFormProps {
   records: ArmyRatingRecord[];
@@ -177,6 +177,55 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     }
   }, [editingRecord]);
 
+  // Find rater record from records or allRecords
+  const selectedRaterRecord = React.useMemo(() => {
+    if (!raterId) return null;
+    const rList = allRecords && allRecords.length > 0 ? allRecords : records;
+    return rList.find(r => r.id === raterId);
+  }, [raterId, records, allRecords]);
+
+  // Two ranks above warning
+  const twoRanksAboveWarning = React.useMemo(() => {
+    if (!selectedRaterRecord) return null;
+    
+    const rateeRank = rank.trim().toUpperCase();
+    const raterRank = (selectedRaterRecord.rank || "").trim().toUpperCase();
+    
+    const getGrade = (rk: string) => {
+      const r = rk.trim().toUpperCase();
+      if (r === "SGM" || r === "CSM") return 9;
+      if (r === "MSG" || r === "1SG") return 8;
+      if (r === "SFC") return 7;
+      if (r === "SSG") return 6;
+      if (r === "SGT") return 5;
+      if (r === "CPL" || r === "SPC") return 4;
+      return null;
+    };
+    
+    const rateeGrade = getGrade(rateeRank);
+    const raterGrade = getGrade(raterRank);
+    
+    if (rateeGrade !== null && raterGrade !== null) {
+      if (raterGrade - rateeGrade >= 2) {
+        return `Rater ${selectedRaterRecord.name} (${raterRank}) is two or more ranks above ratee (${rateeRank}). A MSG should not rate a SSG, and a SGM should not rate a SFC.`;
+      }
+    }
+    return null;
+  }, [rank, selectedRaterRecord]);
+
+  // Same rank warning
+  const sameRankWarning = React.useMemo(() => {
+    if (!selectedRaterRecord) return null;
+    
+    const rateeRank = rank.trim().toUpperCase();
+    const raterRank = (selectedRaterRecord.rank || "").trim().toUpperCase();
+    
+    if (rateeRank === raterRank && (rateeRank === "SSG" || rateeRank === "SFC" || rateeRank === "MSG")) {
+      return `Rater ${selectedRaterRecord.name} (${raterRank}) has the same rank as ratee (${rateeRank}). An NCO should not rate an NCO of the same rank.`;
+    }
+    return null;
+  }, [rank, selectedRaterRecord]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -215,26 +264,40 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     onSave(savedRecord);
   };
 
+  const activeVersion = editingRecord ? (editingRecord.version || "current") : (selectedVersion || "current");
+
   // Filter possible raters/reviewers to avoid assigning oneself or circular structures, sorted alphabetically by last name, de-duplicated by name
   const availableRaters = React.useMemo(() => {
     const rawList = allRecords && allRecords.length > 0 ? allRecords : records;
     const filtered = rawList.filter(r => !editingRecord || r.id !== editingRecord.id);
     
-    // De-duplicate by normalized name, preferring version === "current" || !version
+    // De-duplicate by normalized name, preferring activeVersion or falling back to current
     const map = new Map<string, ArmyRatingRecord>();
     filtered.forEach(r => {
       const key = r.name.trim().toLowerCase();
       if (!key) return;
-      const isCurrent = r.version === "current" || !r.version;
+      
       const existing = map.get(key);
-      if (!existing || (!existing.version || existing.version !== "current" && isCurrent)) {
+      if (!existing) {
         map.set(key, r);
+      } else {
+        const rVersion = r.version || "current";
+        const existingVersion = existing.version || "current";
+        
+        // Prefer the one that matches activeVersion
+        if (rVersion === activeVersion && existingVersion !== activeVersion) {
+          map.set(key, r);
+        }
+        // If neither matches activeVersion, prefer the current/default version
+        else if (existingVersion !== activeVersion && rVersion === "current" && existingVersion !== "current") {
+          map.set(key, r);
+        }
       }
     });
     
     return Array.from(map.values())
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [records, allRecords, editingRecord]);
+  }, [records, allRecords, editingRecord, activeVersion]);
 
   // Collect any manual/external senior raters that exist across records or in active manual fields
   const manualSeniorRaters = React.useMemo(() => {
@@ -310,7 +373,6 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     return list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, undefined, { numeric: true, sensitivity: 'base' }));
   }, [availableRaters, manualSeniorRaters]);
 
-  const activeVersion = editingRecord ? (editingRecord.version || "current") : (selectedVersion || "current");
   const isCurrentVersion = activeVersion === "current";
   const isProjected = activeVersion === "future";
   const isAlternate = activeVersion === "alternate";
@@ -868,7 +930,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   id="select-rater"
                   value={raterId}
                   onChange={(e) => setRaterId(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                  className={`w-full px-2.5 py-1.5 border rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 ${
+                    twoRanksAboveWarning || sameRankWarning ? "border-rose-300 focus:ring-rose-500 bg-rose-50/30" : "border-slate-200 focus:ring-sky-500"
+                  }`}
                 >
                   <option value="">-- None (Top Level) --</option>
                   {combinedRaterRoleOptions.map((opt) => (
@@ -877,6 +941,13 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                     </option>
                   ))}
                 </select>
+
+                {(twoRanksAboveWarning || sameRankWarning) && (
+                  <div className="mt-1.5 text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded p-1.5 flex items-start gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                    <span>{twoRanksAboveWarning || sameRankWarning}</span>
+                  </div>
+                )}
 
                 <div className="space-y-1 pt-1">
                   <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -985,7 +1056,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                 id="select-rater"
                 value={raterId}
                 onChange={(e) => setRaterId(e.target.value)}
-                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+                className={`w-full px-3 py-1.5 border rounded text-xs focus:outline-none focus:ring-1 text-slate-800 bg-slate-50/50 ${
+                  twoRanksAboveWarning || sameRankWarning ? "border-rose-300 focus:ring-rose-500 bg-rose-50/30" : "border-slate-200 focus:ring-amber-500"
+                }`}
               >
                 <option value="">-- None (Top Level) --</option>
                 {combinedRaterRoleOptions.map((opt) => (
@@ -994,6 +1067,12 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                   </option>
                 ))}
               </select>
+              {(twoRanksAboveWarning || sameRankWarning) && (
+                <div className="mt-1.5 text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded p-1.5 flex items-start gap-1">
+                  <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                  <span>{twoRanksAboveWarning || sameRankWarning}</span>
+                </div>
+              )}
               {raterId && (
                 <div className="pt-1.5 space-y-0.5 animate-fade-in">
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Rater Effective Date</label>

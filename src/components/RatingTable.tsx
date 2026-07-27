@@ -440,6 +440,59 @@ export default function RatingTable({
     };
   };
 
+  const isSeniorNcoNotRating = (r: ArmyRatingRecord) => {
+    const rRank = (r.rank || "").trim().toUpperCase();
+    if (rRank !== "SFC" && rRank !== "MSG" && rRank !== "SGM") return false;
+    
+    // Check if their id is referenced as a raterId of any record in the current version / active records
+    const isRatingAnyone = records.some(rec => rec.raterId === r.id);
+    return !isRatingAnyone;
+  };
+
+  const getTwoRanksAboveRaterWarning = (r: ArmyRatingRecord) => {
+    if (!r.raterId || r.raterId === "-") return null;
+    const raterRecord = records.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const rateeRank = (r.rank || "").trim().toUpperCase();
+    const raterRank = (raterRecord.rank || "").trim().toUpperCase();
+    
+    const getGrade = (rankStr: string) => {
+      const rk = rankStr.trim().toUpperCase();
+      if (rk === "SGM" || rk === "CSM") return 9;
+      if (rk === "MSG" || rk === "1SG") return 8;
+      if (rk === "SFC") return 7;
+      if (rk === "SSG") return 6;
+      if (rk === "SGT") return 5;
+      if (rk === "CPL" || rk === "SPC") return 4;
+      return null;
+    };
+    
+    const rateeGrade = getGrade(rateeRank);
+    const raterGrade = getGrade(raterRank);
+    
+    if (rateeGrade !== null && raterGrade !== null) {
+      if (raterGrade - rateeGrade >= 2) {
+        return `Rater ${raterRecord.name} (${raterRank}) is two or more ranks above ratee ${r.name} (${rateeRank}). A MSG should not rate a SSG, and a SGM should not rate a SFC.`;
+      }
+    }
+    return null;
+  };
+
+  const getSameRankRaterWarning = (r: ArmyRatingRecord) => {
+    if (!r.raterId || r.raterId === "-") return null;
+    const raterRecord = records.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const rateeRank = (r.rank || "").trim().toUpperCase();
+    const raterRank = (raterRecord.rank || "").trim().toUpperCase();
+    
+    if (rateeRank === raterRank && (rateeRank === "SSG" || rateeRank === "SFC" || rateeRank === "MSG")) {
+      return `Rater ${raterRecord.name} (${raterRank}) has the same rank as ratee ${r.name} (${rateeRank}). An NCO should not rate an NCO of the same rank.`;
+    }
+    return null;
+  };
+
   const mismatchCount = useMemo(() => {
     let count = 0;
     records.forEach(r => {
@@ -447,6 +500,15 @@ export default function RatingTable({
         count++;
       }
       if (getReviewerMismatchInfo(r)) {
+        count++;
+      }
+      if (isSeniorNcoNotRating(r)) {
+        count++;
+      }
+      if (getTwoRanksAboveRaterWarning(r)) {
+        count++;
+      }
+      if (getSameRankRaterWarning(r)) {
         count++;
       }
     });
@@ -2267,7 +2329,9 @@ export default function RatingTable({
                         }`}
                       >
                       {/* Name */}
-                      <td className={`sticky left-0 z-10 px-3 py-2 font-semibold text-slate-900 border-r border-slate-200 relative ${
+                      <td className={`sticky left-0 z-10 group-hover:z-20 px-3 py-2 font-semibold text-slate-900 border-r border-slate-200 relative ${
+                        isSeniorNcoNotRating(r) ? "ring-2 ring-rose-500 ring-inset" : ""
+                      } ${
                         showGreenLine 
                           ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:z-[11]" 
                           : ""
@@ -2283,7 +2347,20 @@ export default function RatingTable({
                                 : `${isEven ? "bg-slate-50" : "bg-white"} group-hover:bg-slate-100`
                       }`}>
                         <div className="flex flex-col">
-                          <span className="leading-tight">{r.name}</span>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="leading-tight">{r.name}</span>
+                            {isSeniorNcoNotRating(r) && (
+                              <div className="relative group/tooltip flex-shrink-0">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 animate-pulse cursor-help" />
+                                <div className="invisible group-hover/tooltip:visible absolute left-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal font-normal text-left">
+                                  <p className="font-bold text-rose-400 mb-1">Senior NCO Not Rating Anyone</p>
+                                  <p>
+                                    As a {r.rank}, this Senior NCO is expected to be assigned as a rater in this rating scheme. Currently, they are not rating any Soldier.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                           {(selectedVersion === "current" || selectedVersion === "future") && (
                             <button 
                               onClick={(e) => { e.stopPropagation(); toggleHistory(r.id); }}
@@ -2338,17 +2415,43 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${isRaterDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
-                        <div className="font-semibold text-slate-800 leading-tight">
-                          {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId 
-                            ? getRaterName(r.lateRaterId) 
-                            : getRaterName(r.raterId)}
+                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
+                        getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)
+                          ? "ring-2 ring-rose-500 ring-inset relative bg-rose-50/50"
+                          : isRaterDiff 
+                            ? "ring-2 ring-yellow-400 ring-inset relative" 
+                            : ""
+                      }`}>
+                        <div className="flex items-start justify-between gap-1">
+                          <div>
+                            <div className="font-semibold text-slate-800 leading-tight">
+                              {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId 
+                                ? getRaterName(r.lateRaterId) 
+                                : getRaterName(r.raterId)}
+                            </div>
+                            {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId ? (
+                               <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
+                            ) : r.raterId && r.raterEffectiveDate && (
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                Eff: {r.raterEffectiveDate}
+                              </div>
+                            )}
+                          </div>
+                          {(getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)) && (
+                            <div className="relative group/tooltip flex-shrink-0">
+                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse cursor-help" />
+                              <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
+                                <p className="font-bold text-rose-400 mb-1">Rater Rank Discrepancy</p>
+                                <p className="text-[10px] leading-relaxed">
+                                  {getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId ? (
-                           <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
-                        ) : r.raterId && r.raterEffectiveDate && (
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                            Eff: {r.raterEffectiveDate}
+                        {(getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)) && (
+                          <div className="text-[9px] text-rose-600 font-semibold leading-tight mt-1 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 max-w-[140px]">
+                            {getTwoRanksAboveRaterWarning(r) ? "Rank gap too wide" : "Same Rank Rating"}
                           </div>
                         )}
                       </td>
@@ -3031,11 +3134,17 @@ export default function RatingTable({
                                                     <span>T: {current.thru}</span>
                                                   </div>
                                                 </td>
-                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'raterId')}`}>
+                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'raterId') || getDiffClass(r, current, 'raterEffectiveDate')}`}>
                                                   <div className="font-bold text-slate-700">{getRaterName(current.raterId)}</div>
+                                                  {current.raterEffectiveDate && (
+                                                    <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {current.raterEffectiveDate}</div>
+                                                  )}
                                                 </td>
-                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'seniorRaterId')}`}>
+                                                <td className={`px-3 py-3 border-r border-slate-100 ${getDiffClass(r, current, 'seniorRaterId') || getDiffClass(r, current, 'seniorRaterEffectiveDate')}`}>
                                                   <div className="font-bold text-slate-700">{getRaterName(current.seniorRaterId)}</div>
+                                                  {current.seniorRaterEffectiveDate && (
+                                                    <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {current.seniorRaterEffectiveDate}</div>
+                                                  )}
                                                 </td>
                                                 <td className={`px-3 py-3 ${getDiffClass(r, current, 'reviewerId')}`}>
                                                   <div className="font-bold text-slate-700">{getReviewerName(current.reviewerId)}</div>

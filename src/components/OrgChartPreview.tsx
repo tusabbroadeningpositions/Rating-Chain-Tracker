@@ -51,11 +51,43 @@ export default function OrgChartPreview({
   const [selectedNode, setSelectedNode] = useState<ArmyRatingRecord | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const enterFullscreen = () => {
+    setIsFullscreen(true);
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch((err) => {
+        console.warn("Fullscreen API not allowed or failed, falling back to CSS fullscreen:", err);
+      });
+    }
+  };
+
+  const exitFullscreen = () => {
+    setIsFullscreen(false);
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch((err) => {
+        console.warn("Failed to exit browser fullscreen:", err);
+      });
+    }
+  };
+
+  // Sync isFullscreen with standard browser full screen change
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
   // Listen for Escape key to exit fullscreen mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setIsFullscreen(false);
+        exitFullscreen();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -268,6 +300,81 @@ export default function OrgChartPreview({
     };
   };
 
+  const isSeniorNcoNotRating = (r: ArmyRatingRecord) => {
+    const rRank = (r.rank || "").trim().toUpperCase();
+    if (rRank !== "SFC" && rRank !== "MSG" && rRank !== "SGM") return false;
+    
+    // Check if their id is referenced as a raterId of any record in the current version / active records
+    const isRatingAnyone = records.some(rec => rec.raterId === r.id);
+    return !isRatingAnyone;
+  };
+
+  const getTwoRanksAboveRaterWarning = (r: ArmyRatingRecord) => {
+    if (!r.raterId || r.raterId === "-") return null;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const raterRecord = searchSource.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const rateeRank = (r.rank || "").trim().toUpperCase();
+    const raterRank = (raterRecord.rank || "").trim().toUpperCase();
+    
+    const getGrade = (rankStr: string) => {
+      const rk = rankStr.trim().toUpperCase();
+      if (rk === "SGM" || rk === "CSM") return 9;
+      if (rk === "MSG" || rk === "1SG") return 8;
+      if (rk === "SFC") return 7;
+      if (rk === "SSG") return 6;
+      if (rk === "SGT") return 5;
+      if (rk === "CPL" || rk === "SPC") return 4;
+      return null;
+    };
+    
+    const rateeGrade = getGrade(rateeRank);
+    const raterGrade = getGrade(raterRank);
+    
+    if (rateeGrade !== null && raterGrade !== null) {
+      if (raterGrade - rateeGrade >= 2) {
+        return `Rater ${raterRecord.name} (${raterRank}) is two or more ranks above ratee ${r.name} (${rateeRank}). A MSG should not rate a SSG, and a SGM should not rate a SFC.`;
+      }
+    }
+    return null;
+  };
+
+  const getSameRankRaterWarning = (r: ArmyRatingRecord) => {
+    if (!r.raterId || r.raterId === "-") return null;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const raterRecord = searchSource.find(rec => rec.id === r.raterId);
+    if (!raterRecord) return null;
+    
+    const rateeRank = (r.rank || "").trim().toUpperCase();
+    const raterRank = (raterRecord.rank || "").trim().toUpperCase();
+    
+    if (rateeRank === raterRank && (rateeRank === "SSG" || rateeRank === "SFC" || rateeRank === "MSG")) {
+      return `Rater ${raterRecord.name} (${raterRank}) has the same rank as ratee ${r.name} (${rateeRank}). An NCO should not rate an NCO of the same rank.`;
+    }
+    return null;
+  };
+
+  const getNodeWarningClass = (node: ArmyRatingRecord, isHighlighted: boolean, isWide: boolean = false) => {
+    const hasRuleWarning = isSeniorNcoNotRating(node) || 
+                           getTwoRanksAboveRaterWarning(node) !== null || 
+                           getSameRankRaterWarning(node) !== null ||
+                           getSeniorRaterMismatchInfo(node) !== null ||
+                           getReviewerMismatchInfo(node) !== null;
+                           
+    if (isHighlighted) {
+      if (hasRuleWarning) {
+        return "ring-2 ring-rose-500 scale-[1.01] shadow-lg border-rose-500";
+      }
+      return "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500";
+    } else {
+      if (hasRuleWarning) {
+        return "ring-2 ring-rose-500 border-rose-500 hover:scale-[1.005] hover:shadow-md";
+      }
+      return isWide ? "hover:scale-[1.002] hover:shadow" : "hover:scale-[1.005] hover:shadow";
+    }
+  };
+
   return (
     <div className={isFullscreen ? "" : "space-y-4"}>
       
@@ -309,7 +416,7 @@ export default function OrgChartPreview({
 
             {/* Full Screen toggle button */}
             <button
-              onClick={() => setIsFullscreen(true)}
+              onClick={enterFullscreen}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded border border-slate-200 text-xs font-bold transition-all shadow-sm"
               id="btn-toggle-fullscreen"
               title="Full Screen Mode"
@@ -461,7 +568,7 @@ export default function OrgChartPreview({
                   </button>
                   
                   <button
-                    onClick={() => setIsFullscreen(false)}
+                    onClick={exitFullscreen}
                     className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
                   >
                     <Minimize2 className="w-3.5 h-3.5" />
@@ -496,8 +603,7 @@ export default function OrgChartPreview({
               }}
               id="org-chart-canvas"
             >
-              
-              {/* Row 1: OIC (Officer in Charge) */}
+                            {/* Row 1: OIC (Officer in Charge) */}
               {organized.oic && (
                 (() => {
                   const oic = organized.oic;
@@ -512,9 +618,7 @@ export default function OrgChartPreview({
                       onMouseLeave={() => setHoveredNode(null)}
                       onClick={() => setSelectedNode(oic)}
                       className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
-                        isHighlighted 
-                          ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                          : "hover:scale-[1.002] hover:shadow"
+                        getNodeWarningClass(oic, isHighlighted, true)
                       }`}
                     >
                       <div className="text-xs font-bold uppercase tracking-widest">{oic.rank} {oic.name}</div>
@@ -539,9 +643,7 @@ export default function OrgChartPreview({
                       onMouseLeave={() => setHoveredNode(null)}
                       onClick={() => setSelectedNode(leader)}
                       className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
-                        isHighlighted 
-                          ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                          : "hover:scale-[1.002] hover:shadow"
+                        getNodeWarningClass(leader, isHighlighted, true)
                       }`}
                     >
                       <div className="text-xs font-bold uppercase tracking-widest">{leader.rank} {leader.name}</div>
@@ -587,9 +689,7 @@ export default function OrgChartPreview({
                                     onMouseLeave={() => setHoveredNode(null)}
                                     onClick={() => setSelectedNode(header)}
                                     className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${headerColors.bg} ${headerColors.text} ${headerColors.border} ${
-                                      headerHighlighted 
-                                        ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                        : "hover:scale-[1.005] hover:shadow"
+                                      getNodeWarningClass(header, headerHighlighted, true)
                                     }`}
                                   >
                                     <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
@@ -613,9 +713,7 @@ export default function OrgChartPreview({
                                               onMouseLeave={() => setHoveredNode(null)}
                                               onClick={() => setSelectedNode(l)}
                                               className={`w-[26px] h-36 rounded-lg border flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${lColors.bg} ${lColors.text} ${lColors.border} ${
-                                                lHighlighted 
-                                                  ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                                  : "hover:scale-[1.005] hover:shadow"
+                                                getNodeWarningClass(l, lHighlighted)
                                               }`}
                                             >
                                               <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
@@ -637,9 +735,7 @@ export default function OrgChartPreview({
                                                       onMouseLeave={() => setHoveredNode(null)}
                                                       onClick={() => setSelectedNode(sub)}
                                                       className={`w-[26px] h-36 rounded-lg border flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${sColors.bg} ${sColors.text} ${sColors.border} ${
-                                                        sHighlighted 
-                                                          ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                                          : "hover:scale-[1.005] hover:shadow"
+                                                        getNodeWarningClass(sub, sHighlighted)
                                                       }`}
                                                     >
                                                       <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
@@ -684,9 +780,7 @@ export default function OrgChartPreview({
                               onMouseLeave={() => setHoveredNode(null)}
                               onClick={() => setSelectedNode(leader)}
                               className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
-                                isHighlighted 
-                                  ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                  : "hover:scale-[1.005] hover:shadow"
+                                getNodeWarningClass(leader, isHighlighted, true)
                               }`}
                             >
                               <div className="text-xs font-bold uppercase tracking-wider">{leader.rank} {leader.name}</div>
@@ -714,9 +808,7 @@ export default function OrgChartPreview({
                                         onMouseLeave={() => setHoveredNode(null)}
                                         onClick={() => setSelectedNode(header)}
                                         className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${headerColors.bg} ${headerColors.text} ${headerColors.border} ${
-                                          headerHighlighted 
-                                            ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                            : "hover:scale-[1.005] hover:shadow"
+                                          getNodeWarningClass(header, headerHighlighted, true)
                                         }`}
                                       >
                                         <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
@@ -739,9 +831,7 @@ export default function OrgChartPreview({
                                                   onMouseLeave={() => setHoveredNode(null)}
                                                   onClick={() => setSelectedNode(leader)}
                                                   className={`w-[26px] h-36 rounded-lg border flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${leaderColors.bg} ${leaderColors.text} ${leaderColors.border} ${
-                                                    leaderHighlighted 
-                                                      ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                                      : "hover:scale-[1.005] hover:shadow"
+                                                    getNodeWarningClass(leader, leaderHighlighted)
                                                   }`}
                                                 >
                                                   <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
@@ -764,9 +854,7 @@ export default function OrgChartPreview({
                                                           onMouseLeave={() => setHoveredNode(null)}
                                                           onClick={() => setSelectedNode(sub)}
                                                           className={`w-[26px] h-36 rounded-lg border flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${subColors.bg} ${subColors.text} ${subColors.border} ${
-                                                            subHighlighted 
-                                                              ? "ring-2 ring-amber-500 scale-[1.01] shadow-lg border-amber-500" 
-                                                              : "hover:scale-[1.005] hover:shadow"
+                                                            getNodeWarningClass(sub, subHighlighted)
                                                           }`}
                                                         >
                                                           <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
@@ -857,6 +945,9 @@ export default function OrgChartPreview({
           {selectedNode && (() => {
             const seniorRaterMismatch = getSeniorRaterMismatchInfo(selectedNode);
             const reviewerMismatch = getReviewerMismatchInfo(selectedNode);
+            const seniorNcoNotRating = isSeniorNcoNotRating(selectedNode);
+            const twoRanksAboveRater = getTwoRanksAboveRaterWarning(selectedNode);
+            const sameRankRater = getSameRankRaterWarning(selectedNode);
 
             const isCurrent = selectedVersion === "current";
             const currentRecords = (allRecords || []).filter(rec => (rec.version || "current") === "current");
@@ -954,6 +1045,30 @@ export default function OrgChartPreview({
                       </div>
                     )}
 
+                    {seniorNcoNotRating && (
+                      <div className="p-3 bg-rose-950/80 border border-rose-500/80 rounded-md text-xs text-rose-200 space-y-1.5 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-300">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+                          <span>Senior NCO Not Rating Anyone</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-rose-250/95 font-medium">
+                          As a {selectedNode.rank}, this Senior NCO is expected to be assigned as a rater in this rating scheme. Currently, they are not rating any Soldier.
+                        </p>
+                      </div>
+                    )}
+
+                    {(twoRanksAboveRater || sameRankRater) && (
+                      <div className="p-3 bg-rose-950/80 border border-rose-500/80 rounded-md text-xs text-rose-200 space-y-1.5 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-300">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+                          <span>Rater Rank Discrepancy</span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-rose-250/95 font-medium">
+                          {twoRanksAboveRater || sameRankRater}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Assigned Hierarchy */}
                     <div className="space-y-2 pt-3 border-t border-slate-800">
                       <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
@@ -964,6 +1079,9 @@ export default function OrgChartPreview({
                           {isRaterDiff && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
                         </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
+                        {selectedNode.raterEffectiveDate && (
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.raterEffectiveDate}</div>
+                        )}
                       </div>
 
                       <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 transition-all ${seniorRaterMismatch ? "border-rose-500 bg-rose-950/30 ring-1 ring-rose-500/50" : "border-indigo-500"} ${isSeniorRaterDiff ? "ring-2 ring-yellow-400 ring-inset bg-yellow-400/5" : ""}`}>
@@ -973,6 +1091,9 @@ export default function OrgChartPreview({
                           {seniorRaterMismatch && <span className="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Mismatch</span>}
                         </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
+                        {selectedNode.seniorRaterEffectiveDate && (
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.seniorRaterEffectiveDate}</div>
+                        )}
                         {seniorRaterMismatch && (
                           <div className="text-[10px] text-rose-300 font-semibold mt-1 bg-rose-900/60 p-1 rounded border border-rose-800">
                             Expected: {seniorRaterMismatch.expectedName}
