@@ -213,6 +213,14 @@ export default function OrgChartPreview({
     return formatNameToLastFirstRank(raterId);
   };
 
+  const getRaterNameOnly = (raterId: string) => {
+    if (!raterId || raterId === "-") return "-";
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const found = searchSource.find(rec => rec.id === raterId);
+    if (found) return found.name.trim().toLowerCase();
+    return raterId.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+  };
+
   const getSeniorRaterMismatchInfo = (r: ArmyRatingRecord) => {
     if (!r.raterId) return null;
     const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
@@ -850,6 +858,25 @@ export default function OrgChartPreview({
             const seniorRaterMismatch = getSeniorRaterMismatchInfo(selectedNode);
             const reviewerMismatch = getReviewerMismatchInfo(selectedNode);
 
+            const isCurrent = selectedVersion === "current";
+            const currentRecords = (allRecords || []).filter(rec => (rec.version || "current") === "current");
+            const currentSoldier = isCurrent ? null : currentRecords.find(cr => cr.name.trim().toLowerCase() === selectedNode.name.trim().toLowerCase());
+
+            const isRankDiff = !!currentSoldier && selectedNode.rank !== currentSoldier.rank;
+            const isRoleDiff = !!currentSoldier && (
+              selectedNode.role !== currentSoldier.role ||
+              (selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle !== currentSoldier.keyLeaderTitle)
+            );
+            const isMoscDiff = !!currentSoldier && selectedNode.dutyMosc !== currentSoldier.dutyMosc;
+            const isElementDiff = !!currentSoldier && selectedNode.element !== currentSoldier.element;
+            const isDatesDiff = !!currentSoldier && (
+              selectedNode.from !== currentSoldier.from ||
+              selectedNode.thru !== currentSoldier.thru
+            );
+            const isRaterDiff = !!currentSoldier && getRaterNameOnly(selectedNode.raterId) !== getRaterNameOnly(currentSoldier.raterId);
+            const isSeniorRaterDiff = !!currentSoldier && getRaterNameOnly(selectedNode.seniorRaterId) !== getRaterNameOnly(currentSoldier.seniorRaterId);
+            const isReviewerDiff = !!currentSoldier && getRaterNameOnly(selectedNode.reviewerId) !== getRaterNameOnly(currentSoldier.reviewerId);
+
             return (
               <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl ${!isFullscreen ? "h-full" : ""}`}>
                 <div className="p-4 space-y-4 overflow-y-auto">
@@ -866,19 +893,31 @@ export default function OrgChartPreview({
                   <div className="space-y-3">
                     <div>
                       <h3 className="text-sm font-bold text-slate-100 mt-0.5">{selectedNode.name}</h3>
-                      <p className="text-xs text-slate-400 font-medium">{selectedNode.rank} • {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role} ({selectedNode.dutyMosc})</p>
+                      <p className="text-xs text-slate-400 font-medium flex items-center flex-wrap gap-1 mt-0.5">
+                        <span className={isRankDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1 text-yellow-300 font-bold" : ""}>
+                          {selectedNode.rank}
+                        </span>
+                        <span>•</span>
+                        <span className={isRoleDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1 text-yellow-300 font-bold" : ""}>
+                          {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}
+                        </span>
+                        <span>•</span>
+                        <span className={isMoscDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1 text-yellow-300 font-bold" : ""}>
+                          ({selectedNode.dutyMosc})
+                        </span>
+                      </p>
                     </div>
 
                     <div className="border-t border-slate-800 pt-3 text-xs space-y-2">
-                      <div className="flex justify-between">
+                      <div className={`flex justify-between items-center transition-all ${isElementDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1.5 py-0.5" : ""}`}>
                         <span className="text-slate-400">Element:</span>
                         <span className="font-semibold text-slate-200">{selectedNode.element}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className={`flex justify-between items-center transition-all ${isRoleDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1.5 py-0.5" : ""}`}>
                         <span className="text-slate-400">Principal Duty:</span>
                         <span className="font-semibold text-slate-200">{selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle ? `${selectedNode.role} (${selectedNode.keyLeaderTitle})` : selectedNode.role}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className={`flex justify-between items-center transition-all ${isDatesDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1.5 py-0.5" : ""}`}>
                         <span className="text-slate-400">Period:</span>
                         <span className="font-semibold text-slate-200 font-mono">{selectedNode.from} to {selectedNode.thru}</span>
                       </div>
@@ -919,14 +958,18 @@ export default function OrgChartPreview({
                     <div className="space-y-2 pt-3 border-t border-slate-800">
                       <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
                       
-                      <div className="p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs">
-                        <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
+                      <div className={`p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs transition-all ${isRaterDiff ? "ring-1 ring-yellow-400 bg-yellow-400/5" : ""}`}>
+                        <div className="flex justify-between items-center">
+                          <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
+                          {isRaterDiff && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
+                        </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
                       </div>
 
-                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 ${seniorRaterMismatch ? "border-rose-500 bg-rose-950/30 ring-1 ring-rose-500/50" : "border-indigo-500"}`}>
+                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 transition-all ${seniorRaterMismatch ? "border-rose-500 bg-rose-950/30 ring-1 ring-rose-500/50" : "border-indigo-500"} ${isSeniorRaterDiff ? "ring-2 ring-yellow-400 ring-inset bg-yellow-400/5" : ""}`}>
                         <div className="flex justify-between items-center">
                           <div className="text-slate-400 font-bold uppercase text-[8px]">Senior Rater</div>
+                          {isSeniorRaterDiff && !seniorRaterMismatch && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
                           {seniorRaterMismatch && <span className="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Mismatch</span>}
                         </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
@@ -937,9 +980,10 @@ export default function OrgChartPreview({
                         )}
                       </div>
 
-                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 ${reviewerMismatch ? "border-purple-500 bg-purple-950/30 ring-1 ring-purple-500/50" : "border-slate-400"}`}>
+                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 transition-all ${reviewerMismatch ? "border-purple-500 bg-purple-950/30 ring-1 ring-purple-500/50" : "border-slate-400"} ${isReviewerDiff ? "ring-2 ring-yellow-400 ring-inset bg-yellow-400/5" : ""}`}>
                         <div className="flex justify-between items-center">
                           <div className="text-slate-400 font-bold uppercase text-[8px]">Reviewer</div>
+                          {isReviewerDiff && !reviewerMismatch && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
                           {reviewerMismatch && <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider">Required</span>}
                         </div>
                         <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
