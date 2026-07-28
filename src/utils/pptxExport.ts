@@ -28,72 +28,56 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   const colGap = 0.04;
   const groupGap = 0.08;
   const laneGap = 0.05;
-  const cardSubGap = 0.015; // gap between cards placed side-by-side
+  const cardSubGapPreferred = 0.015; // optimal gap between cards placed side-by-side
   const wCardPreferred = 0.35; // optimal comfortable card width
 
-  // Let's first pre-calculate maxCardsInRow across all columns to find layout requirements
-  let maxCardsInRow = 1;
-  organized.groups.forEach((group) => {
-    group.columns.forEach(col => {
-      const numLanes = col.lanes.length;
-      const totalSubs = col.lanes.reduce((sum, lane) => sum + lane.subordinates.length, 0);
-      const maxColCards = Math.max(numLanes, totalSubs, 1);
-      maxCardsInRow = Math.max(maxCardsInRow, maxColCards);
-    });
-  });
-
-  if (organized.directColumns.length > 0) {
-    organized.directColumns.forEach(col => {
-      const numLanes = col.lanes.length;
-      const totalSubs = col.lanes.reduce((sum, lane) => sum + lane.subordinates.length, 0);
-      const maxColCards = Math.max(numLanes, totalSubs, 1);
-      maxCardsInRow = Math.max(maxCardsInRow, maxColCards);
-    });
-  }
-
-  // Calculate required minColWidth to fit maxCardsInRow side-by-side with no collision/crowding
-  const minColWidthNeeded = Math.max(0.8, wCardPreferred * maxCardsInRow + cardSubGap * (maxCardsInRow - 1));
-
-  // Determine weights to see how widths are distributed
-  const numGroups = organized.groups.length;
-  const numDirectCols = organized.directColumns.length;
-  const numLogicalGroups = numGroups + (numDirectCols > 0 ? 1 : 0);
-  const totalGroupGaps = groupGap * (numLogicalGroups - 1);
-
-  const groupWeights = organized.groups.map(g => Math.max(1, g.columns.length));
-  const directWeight = Math.max(0, numDirectCols);
-  const totalWeight = Math.max(1, groupWeights.reduce((sum, w) => sum + w, 0) + directWeight);
-
-  // Find maximum required available width among all column containers
-  let maxAvailableWidthNeeded = 18 - (marginX * 2); // default minimum of 17.6 inches
-
-  organized.groups.forEach((group) => {
-    const numCols = group.columns.length;
-    if (numCols > 0) {
-      // wCol = weightUnitWidth - colGap * (1 - 1/numCols)
-      // To ensure wCol >= minColWidthNeeded:
-      // weightUnitWidth >= minColWidthNeeded + colGap * (1 - 1/numCols)
-      const unitNeeded = minColWidthNeeded + colGap * (1 - 1 / numCols);
-      const remainingNeeded = unitNeeded * totalWeight;
-      const availableNeeded = remainingNeeded + totalGroupGaps;
-      if (availableNeeded > maxAvailableWidthNeeded) {
-        maxAvailableWidthNeeded = availableNeeded;
+  // Calculate minimum required width for each column to guarantee NO collision
+  const getColMinWidth = (col: any): number => {
+    const numLanes = col.lanes.length;
+    if (numLanes === 0) {
+      return 0.8; // default column width to make text readable
+    }
+    let maxLaneWidth = wCardPreferred;
+    col.lanes.forEach((lane: any) => {
+      const numSubs = lane.subordinates.length;
+      const laneWidth = Math.max(wCardPreferred, numSubs * wCardPreferred + (numSubs - 1) * cardSubGapPreferred);
+      if (laneWidth > maxLaneWidth) {
+        maxLaneWidth = laneWidth;
       }
-    }
+    });
+    const colWidth = numLanes * maxLaneWidth + (numLanes - 1) * laneGap;
+    return Math.max(0.8, colWidth);
+  };
+
+  // Compute minimum widths for all columns
+  organized.groups.forEach((group) => {
+    group.columns.forEach((col: any) => {
+      col.minWidth = getColMinWidth(col);
+    });
+  });
+  organized.directColumns.forEach((col: any) => {
+    col.minWidth = getColMinWidth(col);
   });
 
-  if (numDirectCols > 0) {
-    const unitNeeded = minColWidthNeeded + colGap * (1 - 1 / numDirectCols);
-    const remainingNeeded = unitNeeded * totalWeight;
-    const availableNeeded = remainingNeeded + totalGroupGaps;
-    if (availableNeeded > maxAvailableWidthNeeded) {
-      maxAvailableWidthNeeded = availableNeeded;
-    }
-  }
+  // Now, calculate group minimum widths
+  const groupMinWidths = organized.groups.map(group => {
+    if (group.columns.length === 0) return 1.0;
+    const sumCols = group.columns.reduce((sum: number, col: any) => sum + col.minWidth, 0);
+    return sumCols + colGap * (group.columns.length - 1);
+  });
 
-  // Set slide width dynamically: at least 18 inches, scaling wider up to exactly what is needed to fit everyone
-  // CAP at 55 inches to prevent Microsoft PowerPoint file corruption/repair errors (56 inches is the hard max limit of PPT)
-  const slideWidth = Math.min(55, Math.max(18, Math.ceil((maxAvailableWidthNeeded + marginX * 2) * 10) / 10));
+  const directColsMinWidth = organized.directColumns.length > 0
+    ? organized.directColumns.reduce((sum: number, col: any) => sum + col.minWidth, 0) + colGap * (organized.directColumns.length - 1)
+    : 0;
+
+  // Calculate total minimum available width needed
+  const numGroups = organized.groups.length;
+  const numLogicalGroups = numGroups + (organized.directColumns.length > 0 ? 1 : 0);
+  const totalGroupGaps = groupGap * (numLogicalGroups - 1);
+  const totalMinAvailableWidth = groupMinWidths.reduce((sum, w) => sum + w, 0) + directColsMinWidth + totalGroupGaps;
+
+  // Set slide width dynamically: at least 18 inches, scaling wider to perfectly fit everyone up to 55 inches
+  const slideWidth = Math.min(55, Math.max(18, Math.ceil((totalMinAvailableWidth + marginX * 2) * 10) / 10));
   const slideHeight = 7.5;
   const availableWidth = slideWidth - (marginX * 2);
 
@@ -108,6 +92,49 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   // Heights of rows - increased to make the canvas feel larger and less squeezed
   const rowHeight = 0.45;
   const rowGap = 0.08;
+
+  // Calculate sum of minWidths of all columns
+  let totalColsMinWidthSum = 0;
+  organized.groups.forEach(g => {
+    g.columns.forEach((c: any) => {
+      totalColsMinWidthSum += c.minWidth;
+    });
+  });
+  organized.directColumns.forEach((c: any) => {
+    totalColsMinWidthSum += c.minWidth;
+  });
+
+  // Determine scaling factor
+  // availableWidth = totalColsMinWidthSum * scaleFactor + gaps
+  // Since gaps are also scaled, we can solve for scaleFactor:
+  // availableWidth = (totalColsMinWidthSum + totalMinGapsSum) * scaleFactor
+  // But wait, the previous logic was: totalColWidthsAvailable = availableWidth - gaps
+  // Let's keep it simple: scaleFactor = availableWidth / totalMinAvailableWidth
+  const colScaleFactor = totalMinAvailableWidth > 0 ? (availableWidth / totalMinAvailableWidth) : 1;
+  const scaleLimit = Math.min(1, colScaleFactor);
+
+  const scaledColGap = colGap * scaleLimit;
+  const scaledGroupGap = groupGap * scaleLimit;
+  const scaledLaneGap = laneGap * scaleLimit;
+
+  // Determine sum of gaps on the slide to find available column width
+  let totalColGapsSum = 0;
+  organized.groups.forEach(g => {
+    if (g.columns.length > 0) {
+      totalColGapsSum += scaledColGap * (g.columns.length - 1);
+    }
+  });
+  if (organized.directColumns.length > 0) {
+    totalColGapsSum += scaledColGap * (organized.directColumns.length - 1);
+  }
+
+  const totalGroupGapsSum = scaledGroupGap * (Math.max(0, numLogicalGroups - 1));
+  const totalGapsWidth = totalGroupGapsSum + totalColGapsSum;
+  const totalColWidthsAvailable = availableWidth - totalGapsWidth;
+
+  const wCard = wCardPreferred * scaleLimit;
+  const cardSubGap = cardSubGapPreferred * scaleLimit;
+  const cardFontSize = wCard < 0.18 ? 5.5 : wCard < 0.24 ? 6.5 : 7.5;
 
   // Row Y positions
   const yOic = 0.2;
@@ -125,43 +152,41 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   // Split the vertical area into exactly 2 rows of vertical cards (non-musicians on top, musicians on bottom)
   const cardRowGap = 0.1;
   const cardHeight = (maxVerticalHeight - cardRowGap) / 2; // ~1.94 inches each
-
-  // --- Find optimal uniform size for vertical cards dynamically on this actual slideWidth ---
-  let minColWidth = 999;
-
+  
+  // Calculate allocated width for all columns
   organized.groups.forEach((group) => {
-    const numCols = group.columns.length;
-    if (numCols > 0) {
-      const remainingWidthForGroups = availableWidth - totalGroupGaps;
-      const weightUnitWidth = remainingWidthForGroups / totalWeight;
-
-      const groupWeight = Math.max(1, group.columns.length);
-      const wGroup = weightUnitWidth * groupWeight;
-
-      const totalColGaps = colGap * (numCols - 1);
-      const wCol = (wGroup - totalColGaps) / numCols;
-      if (wCol < minColWidth) {
-        minColWidth = wCol;
-      }
-    }
+    group.columns.forEach((col: any) => {
+      col.allocatedWidth = col.minWidth * colScaleFactor;
+    });
+  });
+  organized.directColumns.forEach((col: any) => {
+    col.allocatedWidth = col.minWidth * colScaleFactor;
   });
 
-  // Also check directColumns for minColWidth
+  // Calculate allocated group width function
+  const getGroupAllocatedWidth = (g: any): number => {
+    if (g.columns.length === 0) return 1.0;
+    const colsWidthSum = g.columns.reduce((sum: number, col: any) => sum + col.allocatedWidth, 0);
+    return colsWidthSum + colGap * (g.columns.length - 1);
+  };
+
+  // Calculate the exact total width occupied by the lower rows to center them and flush align OIC / Element Leader
+  let totalDrawnWidth = 0;
   if (organized.directColumns.length > 0) {
-    const remainingWidthForGroups = availableWidth - totalGroupGaps;
-    const weightUnitWidth = remainingWidthForGroups / totalWeight;
-    const wDirectGroup = weightUnitWidth * directWeight;
-    const wCol = (wDirectGroup - colGap * (directWeight - 1)) / directWeight;
-    if (wCol < minColWidth) minColWidth = wCol;
+    const directColsWidth = organized.directColumns.reduce((sum: number, col: any) => sum + col.allocatedWidth, 0) + scaledColGap * (Math.max(0, organized.directColumns.length - 1));
+    totalDrawnWidth += directColsWidth;
+  }
+  if (organized.groups.length > 0) {
+    const groupsWidth = organized.groups.reduce((sum: number, g: any) => sum + getGroupAllocatedWidth(g), 0) + scaledGroupGap * (Math.max(0, organized.groups.length - 1));
+    if (organized.directColumns.length > 0) {
+      totalDrawnWidth += scaledGroupGap + groupsWidth;
+    } else {
+      totalDrawnWidth = groupsWidth;
+    }
   }
 
-  if (minColWidth === 999) minColWidth = 1.0;
-
-  const maxPossibleCardW = (minColWidth - cardSubGap * (maxCardsInRow - 1)) / maxCardsInRow;
-  // Uniform card width is optimized dynamically up to 0.38 inches
-  // Allow card width to scale down dynamically to 0.12 inches to fit within capped width slide
-  const wCard = Math.min(0.38, Math.max(0.12, maxPossibleCardW));
-  const cardFontSize = wCard < 0.18 ? 5.5 : wCard < 0.24 ? 6.5 : 7.5;
+  const actualW = totalDrawnWidth > 0 ? totalDrawnWidth : availableWidth;
+  const startX = totalDrawnWidth > 0 ? marginX + (availableWidth - totalDrawnWidth) / 2 : marginX;
 
   // --- Draw Row 1: OIC ---
   if (organized.oic) {
@@ -171,25 +196,27 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     const label = `${oic.rank} ${oic.name}\n${dateToUse}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: marginX,
+      x: startX,
       y: yOic,
-      w: availableWidth,
+      w: actualW,
       h: rowHeight,
       fill: { color: colors.hexBg },
       line: { color: colors.hexBorder, width: 1 }
     });
 
     slide.addText(label, {
-      x: marginX,
+      x: startX,
       y: yOic,
-      w: availableWidth,
+      w: actualW,
       h: rowHeight,
       align: "center",
       valign: "middle",
       fontSize: 11,
       fontFace: "Inter",
       color: colors.hexText,
-      bold: true
+      bold: true,
+      margin: 0,
+      autoFit: true
     });
   }
 
@@ -201,41 +228,33 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     const label = `${leader.rank} ${leader.name}\n${dateToUse}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: marginX,
+      x: startX,
       y: yElementLeader,
-      w: availableWidth,
+      w: actualW,
       h: rowHeight,
       fill: { color: colors.hexBg },
       line: { color: colors.hexBorder, width: 1 }
     });
 
     slide.addText(label, {
-      x: marginX,
+      x: startX,
       y: yElementLeader,
-      w: availableWidth,
+      w: actualW,
       h: rowHeight,
       align: "center",
       valign: "middle",
       fontSize: 11,
       fontFace: "Inter",
       color: colors.hexText,
-      bold: true
+      bold: true,
+      margin: 0,
+      autoFit: true
     });
   }
 
   // --- Draw Row 3, 4, 5+: Groups & Subordinates ---
-  if (numGroups > 0 || numDirectCols > 0) {
-    const groupGap = 0.08;
-    const numLogicalGroups = numGroups + (numDirectCols > 0 ? 1 : 0);
-    const totalGroupGaps = groupGap * (numLogicalGroups - 1);
-    const remainingWidthForGroups = availableWidth - totalGroupGaps;
-
-    const groupWeights = organized.groups.map(g => Math.max(1, g.columns.length));
-    const directWeight = Math.max(0, numDirectCols);
-    const totalWeight = groupWeights.reduce((sum, w) => sum + w, 0) + directWeight;
-    const weightUnitWidth = remainingWidthForGroups / totalWeight;
-
-    let currentX = marginX;
+  if (organized.groups.length > 0 || organized.directColumns.length > 0) {
+    let currentX = startX;
 
     // Helper to draw a single column
     const drawColumn = (col: any, xCol: number, wCol: number) => {
@@ -262,16 +281,17 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
         fontSize: 8,
         fontFace: "Inter",
         color: headerColors.hexText,
-        bold: true
+        bold: true,
+        margin: 0,
+        autoFit: true
       });
 
       const numLanes = col.lanes.length;
       if (numLanes > 0) {
-        const laneGap = 0.05;
-        const laneSpace = (wCol - laneGap * (numLanes - 1)) / numLanes;
+        const laneSpace = (wCol - scaledLaneGap * (numLanes - 1)) / numLanes;
 
         col.lanes.forEach((lane: any, lIndex: number) => {
-          const xLane = xCol + lIndex * (laneSpace + laneGap);
+          const xLane = xCol + lIndex * (laneSpace + scaledLaneGap);
           const leader = lane.laneLeader;
           const leaderColors = getRoleColors(leader.role);
           const leaderDate = formatArmyDate(leader.thru);
@@ -308,7 +328,8 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
             color: leaderColors.hexText,
             bold: true,
             rotate: 270,
-            margin: 0
+            margin: 0,
+            autoFit: true
           });
 
           const numSubs = lane.subordinates.length;
@@ -351,7 +372,8 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
                 color: subColors.hexText,
                 bold: true,
                 rotate: 270,
-                margin: 0
+                margin: 0,
+                autoFit: true
               });
             });
           }
@@ -360,25 +382,25 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     };
 
     // 1. Draw Direct Support Columns
-    if (numDirectCols > 0) {
-      const wDirectGroup = weightUnitWidth * directWeight;
-      const colGap = 0.04;
-      const wCol = (wDirectGroup - colGap * (numDirectCols - 1)) / numDirectCols;
-
-      organized.directColumns.forEach((col, cIndex) => {
-        const xCol = currentX + cIndex * (wCol + colGap);
-        drawColumn(col, xCol, wCol);
+    if (organized.directColumns.length > 0) {
+      let colX = currentX;
+      organized.directColumns.forEach((col: any) => {
+        const wCol = col.allocatedWidth;
+        drawColumn(col, colX, wCol);
+        colX += wCol + scaledColGap;
       });
-      currentX += wDirectGroup + groupGap;
+      
+      const directColsAllocatedWidth = organized.directColumns.reduce((sum: number, col: any) => sum + col.allocatedWidth, 0) + scaledColGap * (Math.max(0, organized.directColumns.length - 1));
+      currentX += directColsAllocatedWidth + scaledGroupGap;
     }
 
     // 2. Draw Group Leader Blocks
-    organized.groups.forEach((group, gIndex) => {
-      const wGroup = weightUnitWidth * groupWeights[gIndex];
+    organized.groups.forEach((group) => {
+      const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
       const leaderColors = getRoleColors(group.leader.role);
       const leaderDate = formatArmyDate(group.leader.thru);
-      const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? `\n(${group.leader.keyLeaderTitle.toUpperCase()})` : "";
+      const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? ` (${group.leader.keyLeaderTitle.toUpperCase()})` : "";
       const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}\n${leaderDate}`;
 
       // Draw Group Leader Box
@@ -401,21 +423,19 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
         fontSize: 9,
         fontFace: "Inter",
         color: leaderColors.hexText,
-        bold: true
+        bold: true,
+        margin: 0,
+        autoFit: true
       });
 
-      const numCols = group.columns.length;
-      if (numCols > 0) {
-        const colGap = 0.04;
-        const totalColGaps = colGap * (numCols - 1);
-        const wCol = (wGroup - totalColGaps) / numCols;
+      let colX = xGroup;
+      group.columns.forEach((col: any) => {
+        const wCol = col.allocatedWidth;
+        drawColumn(col, colX, wCol);
+        colX += wCol + scaledColGap;
+      });
 
-        group.columns.forEach((col, cIndex) => {
-          const xCol = xGroup + cIndex * (wCol + colGap);
-          drawColumn(col, xCol, wCol);
-        });
-      }
-      currentX += wGroup + groupGap;
+      currentX += wGroup + scaledGroupGap;
     });
   }
 
@@ -475,7 +495,9 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       fontSize: 8,
       fontFace: "Inter",
       color: colors.hexText,
-      bold: true
+      bold: true,
+      margin: 0,
+      autoFit: true
     });
   });
 

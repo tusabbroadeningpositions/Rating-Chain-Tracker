@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import { jsPDF } from "jspdf";
+import * as htmlToImage from 'html-to-image';
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
@@ -113,6 +114,328 @@ export default function RatingTable({
     onConfirm: () => void;
     variant: "danger" | "warning" | "info" | "question";
   } | null>(null);
+
+  // Internal component for the Report Preview Modal to handle local state (filtering)
+  const ReportPreviewModal = () => {
+    const [reportSearch, setReportSearch] = useState("");
+    const [filterCategory, setFilterCategory] = useState<string>("all");
+    const reportRef = useRef<HTMLDivElement>(null);
+    const [isExportingImage, setIsExportingImage] = useState(false);
+
+    const baseReportItems = useMemo(() => getReportItems(), []);
+    
+    const reportItems = useMemo(() => {
+      let filtered = baseReportItems;
+
+      // Apply Category Filter
+      if (filterCategory !== "all") {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        filtered = filtered.filter(item => {
+          const r = item.record;
+          const currentRec = findCurrentRecord(r);
+          const status = currentRec.ncoerStatus || "Not Submitted to HR";
+          
+          const thruDate = new Date(item.thru);
+          thruDate.setHours(0, 0, 0, 0);
+          const diffTime = now.getTime() - thruDate.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+          const hqdaDueStr = item.isLate ? (currentRec.priorDueHqda || add90Days(item.thru)) : (r.dueHqda || add90Days(item.thru));
+          const hqdaDate = new Date(hqdaDueStr);
+          hqdaDate.setHours(0, 0, 0, 0);
+          const isPastHqda = now > hqdaDate;
+
+          switch (filterCategory) {
+            case "30plus_not_submitted":
+              return diffDays >= 30 && status === "Not Submitted to HR";
+            case "reviewing":
+              return status.includes("Reviewing") || status.includes("BN") || status.includes("BDE");
+            case "signatures_edits":
+              return status === "Out for Signatures" || status === "Returned for Edits";
+            case "0_29_past":
+              return diffDays >= 0 && diffDays < 30;
+            case "late_hqda":
+              return isPastHqda && status !== "Submitted to HQDA";
+            default:
+              return true;
+          }
+        });
+      }
+
+      // Apply Search Filter
+      if (reportSearch) {
+        const term = reportSearch.toLowerCase();
+        filtered = filtered.filter(item => {
+          const r = item.record;
+          const currentRec = findCurrentRecord(r);
+          const status = currentRec.ncoerStatus || "Not Submitted to HR";
+          return (
+            r.name.toLowerCase().includes(term) ||
+            r.rank.toLowerCase().includes(term) ||
+            r.role.toLowerCase().includes(term) ||
+            status.toLowerCase().includes(term) ||
+            (r.keyLeaderTitle && r.keyLeaderTitle.toLowerCase().includes(term))
+          );
+        });
+      }
+
+      return filtered;
+    }, [baseReportItems, reportSearch, filterCategory]);
+
+    let totalPastDue = 0;
+    let totalComingDue = 0;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    reportItems.forEach(item => {
+      if (item.thru) {
+        const thruDate = new Date(item.thru);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) totalPastDue++;
+        else totalComingDue++;
+      }
+    });
+
+    const handleDownloadImage = async () => {
+      if (!reportRef.current) return;
+      setIsExportingImage(true);
+      try {
+        const dataUrl = await htmlToImage.toPng(reportRef.current, {
+          backgroundColor: '#ffffff',
+          quality: 1,
+          pixelRatio: 2
+        });
+        const link = document.createElement('a');
+        const date = new Date().toISOString().split('T')[0];
+        link.download = `NCOER_Status_Report_${date}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error('oops, something went wrong!', err);
+      } finally {
+        setIsExportingImage(false);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 flex flex-col">
+          {/* Header */}
+          <div className="relative">
+            <div className="bg-[#1E293B] p-6 pr-16">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-bold uppercase tracking-tight text-lg text-white leading-none">
+                    NCOER STATUS MONITORING REPORT - {(activeSchemeName || "ACTIVE RATING SCHEME").toUpperCase()}
+                  </h3>
+                  <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mt-2">
+                    AS OF: {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).toUpperCase()}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 mr-12">
+                   {/* Category Filter */}
+                   <select
+                     value={filterCategory}
+                     onChange={(e) => setFilterCategory(e.target.value)}
+                     className="bg-white/10 border border-white/20 rounded-xl py-2 px-3 text-[10px] font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 appearance-none cursor-pointer hover:bg-white/20 transition-all"
+                   >
+                     <option value="all" className="bg-slate-800">ALL RECORDS</option>
+                     <option value="30plus_not_submitted" className="bg-slate-800">30+ DAYS PAST THRU (NOT SUBMITTED)</option>
+                     <option value="reviewing" className="bg-slate-800">REVIEWING - HR OR CSM</option>
+                     <option value="signatures_edits" className="bg-slate-800">OUT FOR SIGNATURES / EDITS</option>
+                     <option value="0_29_past" className="bg-slate-800">0 TO 29 DAYS PAST THRU</option>
+                     <option value="late_hqda" className="bg-slate-800">LATE TO HQDA</option>
+                   </select>
+
+                   <div className="relative group">
+                     <Search className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-amber-400 transition-colors" />
+                     <input 
+                       type="text"
+                       placeholder="SEARCH NAMES..."
+                       value={reportSearch}
+                       onChange={(e) => setReportSearch(e.target.value)}
+                       className="bg-white/10 border border-white/20 rounded-xl py-2 pl-10 pr-4 text-[10px] font-bold text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 w-48 transition-all"
+                     />
+                     {reportSearch && (
+                       <button onClick={() => setReportSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white">
+                         <X className="w-3 h-3" />
+                       </button>
+                     )}
+                   </div>
+                </div>
+              </div>
+            </div>
+            <div className="h-1 bg-amber-500 w-full" />
+            <button 
+              onClick={() => setIsShowingReportPreview(false)}
+              className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white" ref={reportRef}>
+            {reportItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                  <Info className="w-10 h-10 text-slate-300" />
+                </div>
+                <h4 className="font-black uppercase tracking-tight text-slate-400">
+                  {reportSearch ? "No results matching your filter" : "No NCOERs meet report criteria"}
+                </h4>
+                <p className="text-xs text-slate-400 mt-2 max-w-xs">
+                  {reportSearch ? "Try adjusting your search term or clear the filter." : "All NCOER schedules are currently up-to-date."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Stats Summary Cards (Matching PDF) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-200">
+                  <div className="p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Report Focus</p>
+                    <p className="text-sm font-bold text-slate-800">NCOERs Due within 30 Days / Overdue</p>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Critical Overdue</p>
+                    <p className="text-lg font-black text-rose-600 leading-tight">{totalPastDue} Soldiers Overdue</p>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Upcoming Action (30 Days)</p>
+                    <p className="text-lg font-black text-amber-600 leading-tight">{totalComingDue} Soldiers Upcoming</p>
+                  </div>
+                </div>
+
+                {/* Table View */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-700 text-[10px] font-black uppercase tracking-widest text-white items-center">
+                    <div className="col-span-3">Soldier (Rank / Name)</div>
+                    <div className="col-span-2">Duty Title & MOSC</div>
+                    <div className="col-span-2 text-center">Thru Date (Days)</div>
+                    <div className="col-span-2">Rater / Senior Rater</div>
+                    <div className="col-span-2 text-center">NCOER Status</div>
+                    <div className="col-span-1 text-right">HQDA Due</div>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {reportItems.map((item, idx) => {
+                      const thruDate = new Date(item.thru);
+                      thruDate.setHours(0, 0, 0, 0);
+                      const diffTime = thruDate.getTime() - now.getTime();
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                      
+                      let daysText = `${diffDays}d Remaining`;
+                      let daysColor = "text-amber-600";
+                      
+                      if (diffDays < 0) {
+                        daysText = `${Math.abs(diffDays)}d OVERDUE`;
+                        daysColor = "text-rose-600";
+                      } else if (diffDays === 0) {
+                        daysText = "DUE TODAY";
+                        daysColor = "text-amber-600";
+                      }
+
+                      const helperGetName = (id: string) => {
+                        if (!id || id === "-") return "—";
+                        const rec = allRecords?.find(x => x.id === id);
+                        return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
+                      };
+
+                      const currentRec = allRecords?.find(x => x.id === item.record.id) || item.record;
+                      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+                      const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : item.record.raterId;
+                      const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : item.record.seniorRaterId;
+
+                      const { status: badgeStatus, badgeClass } = getEffectiveNcoerStatusAndColor(item.record);
+                      const hqdaDueStr = item.isLate ? (currentRec.priorDueHqda || add90Days(item.thru)) : (item.record.dueHqda || add90Days(item.thru));
+
+                      return (
+                        <div key={idx} className={`grid grid-cols-12 gap-4 px-4 py-4 items-center text-[11px] ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
+                          <div className="col-span-3 flex items-center gap-3">
+                            <div className="w-8 h-8 bg-white border border-slate-200 rounded flex items-center justify-center font-bold text-slate-600 shadow-sm shrink-0">
+                              {item.record.rank}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-black text-slate-800 uppercase leading-none truncate">{item.record.name}</p>
+                            </div>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="font-bold text-slate-600 leading-tight text-[10px]">
+                              {item.record.role}
+                              {item.record.keyLeaderTitle && <span className="block text-[8px] text-slate-400 normal-case font-medium">({item.record.keyLeaderTitle})</span>}
+                            </p>
+                            <p className="text-[8px] font-mono text-slate-400 mt-0.5 tracking-tighter">[MOSC: {item.record.dutyMosc || "—"}]</p>
+                          </div>
+                          <div className="col-span-2 text-center">
+                            <p className="font-mono font-bold text-slate-700">{item.thru}</p>
+                            <p className={`text-[9px] font-black uppercase mt-0.5 ${daysColor}`}>
+                              ({daysText})
+                            </p>
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="w-1 h-1 bg-blue-500 rounded-full shrink-0" />
+                              <span className="font-bold text-slate-600 truncate text-[10px]">{helperGetName(raterToUse)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="w-1 h-1 bg-emerald-500 rounded-full shrink-0" />
+                              <span className="font-bold text-slate-600 truncate text-[10px]">{helperGetName(srToUse)}</span>
+                            </div>
+                          </div>
+                          <div className="col-span-2 flex justify-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-black uppercase border tracking-tighter shadow-sm whitespace-nowrap ${badgeClass}`}>
+                              {badgeStatus || "Not Submitted"}
+                            </span>
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <p className="font-mono font-bold text-slate-700">{hqdaDueStr}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2 text-slate-400 text-xs">
+              <AlertCircle className="w-4 h-4" />
+              <span>Report dynamically filtered by {reportItems.length} active records.</span>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setIsShowingReportPreview(false)}
+                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest"
+              >
+                Close Preview
+              </button>
+              <button
+                disabled={isExportingImage}
+                onClick={handleDownloadImage}
+                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest flex items-center gap-2"
+              >
+                {isExportingImage ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-500" />}
+                Download as Image
+              </button>
+              <button
+                onClick={() => {
+                  handleExportNcoerReport(reportItems);
+                  setIsShowingReportPreview(false);
+                }}
+                className="px-6 py-2.5 bg-blue-600 text-white hover:bg-blue-700 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-blue-200 flex items-center gap-2"
+              >
+                <FileDown className="w-4 h-4" />
+                Download PDF Report
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     const handleWindowScroll = () => {
@@ -636,8 +959,8 @@ export default function RatingTable({
   };
 
   // Handle PDF NCOER Report Export
-  const handleExportNcoerReport = () => {
-    const reportItems = getReportItems();
+  const handleExportNcoerReport = (filteredItems?: { record: ArmyRatingRecord; thru: string; isLate: boolean }[]) => {
+    const reportItems = filteredItems || getReportItems();
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
@@ -750,26 +1073,32 @@ export default function RatingTable({
         } else {
           switch (status) {
             case "Not Submitted to HR":
-              bg = [254, 226, 226]; // rose-100
-              textCol = [159, 18, 57]; // rose-800
+              bg = [225, 29, 72]; // rose-600
+              textCol = [255, 255, 255];
               break;
             case "Submitted to HR":
             case "Reviewing - HR":
             case "Reviewing - CSM":
-              bg = [219, 234, 254]; // blue-100
-              textCol = [30, 64, 175]; // blue-800
+            case "Reviewing - BN":
+            case "Reviewing - BDE":
+              bg = [37, 99, 235]; // blue-600
+              textCol = [255, 255, 255];
               break;
             case "Returned for Edits":
-              bg = [255, 237, 213]; // orange-100
-              textCol = [154, 52, 18]; // orange-800
+              bg = [217, 119, 6]; // amber-600
+              textCol = [255, 255, 255];
               break;
             case "Out for Signatures":
-              bg = [254, 249, 195]; // yellow-100
-              textCol = [133, 77, 14]; // yellow-800
+              bg = [79, 70, 229]; // indigo-600
+              textCol = [255, 255, 255];
               break;
             case "Submitted to HQDA":
-              bg = [209, 250, 229]; // green-100
-              textCol = [6, 95, 70]; // green-800
+              bg = [5, 150, 105]; // emerald-600
+              textCol = [255, 255, 255];
+              break;
+            case "Late":
+              bg = [190, 18, 60]; // rose-700
+              textCol = [255, 255, 255];
               break;
           }
         }
@@ -783,11 +1112,11 @@ export default function RatingTable({
       }
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setTextColor(textCol[0], textCol[1], textCol[2]);
       const textWidth = doc.getTextWidth(status || "—");
       const textX = x + (w - textWidth) / 2;
-      doc.text(status || "—", textX, y + 4.5);
+      doc.text(status || "—", textX, y + 4.2);
     };
 
     if (reportItems.length === 0) {
@@ -1004,7 +1333,7 @@ export default function RatingTable({
       doc.setFont("helvetica", "mono");
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      const hqdaDueStr = item.isLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));
+      const hqdaDueStr = isActuallyLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));
       doc.text(formatNiceDate(hqdaDueStr), 253, y + 4.5);
 
       y += rowHeight;
@@ -1686,7 +2015,7 @@ export default function RatingTable({
       isAutoRed = true;
     }
 
-    let bgClass = ""; 
+    let bgClass = "";
     let badgeClass = "bg-slate-100 text-slate-700 border-slate-300";
     if (status || targetRecord.priorThru) {
       if (isCustom) {
@@ -1696,7 +2025,7 @@ export default function RatingTable({
         switch (status) {
           case "Not Submitted to HR":
             bgClass = "bg-rose-100 text-rose-950";
-            badgeClass = "bg-white/40 text-rose-950 border-rose-400/30 font-extrabold shadow-none";
+            badgeClass = "bg-rose-600 text-white border-rose-700 font-extrabold shadow-sm";
             break;
           case "Submitted to HR":
           case "Reviewing - HR":
@@ -1704,23 +2033,23 @@ export default function RatingTable({
           case "Reviewing - BN":
           case "Reviewing - BDE":
             bgClass = "bg-blue-100 text-blue-950";
-            badgeClass = "bg-white/40 text-blue-950 border-blue-400/30 font-extrabold shadow-none";
+            badgeClass = "bg-blue-600 text-white border-blue-700 font-extrabold shadow-sm";
             break;
           case "Returned for Edits":
-            bgClass = "bg-orange-100 text-orange-950";
-            badgeClass = "bg-white/40 text-orange-950 border-orange-400/30 font-extrabold shadow-none";
+            bgClass = "bg-amber-100 text-amber-950";
+            badgeClass = "bg-amber-600 text-white border-amber-700 font-extrabold shadow-sm";
             break;
           case "Out for Signatures":
-            bgClass = "bg-amber-100 text-amber-950";
-            badgeClass = "bg-white/40 text-amber-950 border-amber-400/30 font-extrabold shadow-none";
+            bgClass = "bg-indigo-100 text-indigo-950";
+            badgeClass = "bg-indigo-600 text-white border-indigo-700 font-extrabold shadow-sm";
             break;
           case "Submitted to HQDA":
             bgClass = "bg-emerald-100 text-emerald-950";
-            badgeClass = "bg-white/40 text-emerald-950 border-emerald-400/30 font-extrabold shadow-none";
+            badgeClass = "bg-emerald-600 text-white border-emerald-700 font-extrabold shadow-sm";
             break;
           case "Late":
             bgClass = "bg-rose-100 text-rose-950";
-            badgeClass = "bg-rose-600 text-white border-rose-700 font-extrabold shadow-sm";
+            badgeClass = "bg-rose-700 text-white border-rose-800 font-extrabold shadow-md";
             break;
           default:
             bgClass = "bg-slate-100 text-slate-900";
@@ -3456,207 +3785,7 @@ export default function RatingTable({
       )}
 
       {/* Report Preview Modal */}
-      {isShowingReportPreview && (() => {
-        const reportItems = getReportItems();
-        let totalPastDue = 0;
-        let totalComingDue = 0;
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-
-        reportItems.forEach(item => {
-          if (item.thru) {
-            const thruDate = new Date(item.thru);
-            const diffTime = thruDate.getTime() - now.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            if (diffDays < 0) totalPastDue++;
-            else totalComingDue++;
-          }
-        });
-
-        return (
-          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300 flex flex-col">
-              {/* PDF-Style Header */}
-              <div className="relative">
-                <div className="bg-[#1E293B] p-6 pr-16">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold uppercase tracking-tight text-lg text-white leading-none">
-                        NCOER STATUS MONITORING REPORT - {(activeSchemeName || "ACTIVE RATING SCHEME").toUpperCase()}
-                      </h3>
-                      <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mt-2">
-                        AS OF: {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).toUpperCase()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="h-1 bg-amber-500 w-full" />
-                <button 
-                  onClick={() => setIsShowingReportPreview(false)}
-                  className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white">
-                {reportItems.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                      <Info className="w-10 h-10 text-slate-300" />
-                    </div>
-                    <h4 className="font-black uppercase tracking-tight text-slate-400">No NCOERs meet report criteria</h4>
-                    <p className="text-xs text-slate-400 mt-2 max-w-xs">
-                      All NCOER schedules are currently up-to-date. No records are past due or within 30 days of their thru date.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    {/* Stats Summary Cards (Matching PDF) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-200">
-                      <div className="p-4">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Report Focus</p>
-                        <p className="text-sm font-bold text-slate-800">NCOERs Due within 30 Days / Overdue</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Critical Overdue</p>
-                        <p className="text-lg font-black text-rose-600 leading-tight">{totalPastDue} Soldiers Overdue</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Upcoming Action (30 Days)</p>
-                        <p className="text-lg font-black text-amber-600 leading-tight">{totalComingDue} Soldiers Upcoming</p>
-                      </div>
-                    </div>
-
-                    {/* Table View */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-                      <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-700 text-[10px] font-black uppercase tracking-widest text-white items-center">
-                        <div className="col-span-3">Soldier (Rank / Name)</div>
-                        <div className="col-span-2">Duty Title & MOSC</div>
-                        <div className="col-span-2 text-center">Thru Date (Days)</div>
-                        <div className="col-span-2">Rater / Senior Rater</div>
-                        <div className="col-span-2 text-center">NCOER Status</div>
-                        <div className="col-span-1 text-right">HQDA Due</div>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                        {reportItems.map((item, idx) => {
-                          const thruDate = new Date(item.thru);
-                          thruDate.setHours(0, 0, 0, 0);
-                          const diffTime = thruDate.getTime() - now.getTime();
-                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                          
-                          let daysText = `${diffDays}d Remaining`;
-                          let daysColor = "text-amber-600";
-                          
-                          if (diffDays < 0) {
-                            daysText = `${Math.abs(diffDays)}d OVERDUE`;
-                            daysColor = "text-rose-600";
-                          } else if (diffDays === 0) {
-                            daysText = "DUE TODAY";
-                            daysColor = "text-amber-600";
-                          }
-
-                          const helperGetName = (id: string) => {
-                            if (!id || id === "-") return "—";
-                            const rec = allRecords?.find(x => x.id === id);
-                            return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
-                          };
-
-                          const currentRec = allRecords?.find(x => x.id === item.record.id) || item.record;
-                          const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
-                          const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : item.record.raterId;
-                          const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : item.record.seniorRaterId;
-
-                          // Badge Status Logic
-                          const badgeStatus = currentRec.ncoerStatus || "Not Submitted to HR";
-                          let badgeClass = "text-slate-600 bg-slate-50 border-slate-100";
-                          
-                          if (badgeStatus === "Submitted to HQDA") {
-                            badgeClass = "text-emerald-600 bg-emerald-50 border-emerald-100";
-                          } else if (badgeStatus.includes("Reviewing") || badgeStatus === "Out for Signatures") {
-                            badgeClass = "text-blue-600 bg-blue-50 border-blue-100";
-                          } else if (badgeStatus === "Not Submitted to HR" || badgeStatus === "Returned for Edits" || badgeStatus === "Late") {
-                            badgeClass = "text-rose-600 bg-rose-50 border-rose-100";
-                          }
-
-                          return (
-                            <div key={idx} className={`grid grid-cols-12 gap-4 px-4 py-4 items-center text-[11px] ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
-                              <div className="col-span-3 flex items-center gap-3">
-                                <div className="w-8 h-8 bg-white border border-slate-200 rounded flex items-center justify-center font-bold text-slate-600 shadow-sm shrink-0">
-                                  {item.record.rank}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-black text-slate-800 uppercase leading-none truncate">{item.record.name}</p>
-                                </div>
-                              </div>
-                              <div className="col-span-2">
-                                <p className="font-bold text-slate-600 leading-tight">
-                                  {item.record.role}
-                                  {item.record.keyLeaderTitle && <span className="block text-[9px] text-slate-400 normal-case font-medium">({item.record.keyLeaderTitle})</span>}
-                                </p>
-                                <p className="text-[9px] font-mono text-slate-400 mt-0.5">[MOSC: {item.record.dutyMosc || "—"}]</p>
-                              </div>
-                              <div className="col-span-2 text-center">
-                                <p className="font-mono font-bold text-slate-700">{item.thru}</p>
-                                <p className={`text-[9px] font-black uppercase mt-0.5 ${daysColor}`}>
-                                  ({daysText})
-                                </p>
-                              </div>
-                              <div className="col-span-2 space-y-1">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <div className="w-1 h-1 bg-blue-500 rounded-full shrink-0" />
-                                  <span className="font-bold text-slate-600 truncate">{helperGetName(raterToUse)}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <div className="w-1 h-1 bg-emerald-500 rounded-full shrink-0" />
-                                  <span className="font-bold text-slate-600 truncate">{helperGetName(srToUse)}</span>
-                                </div>
-                              </div>
-                              <div className="col-span-2 flex justify-center">
-                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border tracking-tighter shadow-sm ${badgeClass}`}>
-                                  {badgeStatus}
-                                </span>
-                              </div>
-                              <div className="col-span-1 text-right">
-                                <p className="font-mono font-bold text-slate-700">{item.record.dueHqda || add90Days(item.thru)}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400 text-xs">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>This preview dynamically updates based on your current view filters.</span>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setIsShowingReportPreview(false)}
-                    className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest"
-                  >
-                    Close Preview
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleExportNcoerReport();
-                      setIsShowingReportPreview(false);
-                    }}
-                    className="px-6 py-2.5 bg-blue-600 text-white hover:bg-blue-700 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-blue-200 flex items-center gap-2"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    Download PDF Report
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {isShowingReportPreview && <ReportPreviewModal />}
 
       {/* Batch Promotion Summary Modal */}
       {isShowingBatchPromoteSummary && (

@@ -142,31 +142,34 @@ export default function OrgChartPreview({
       return 180; // Minimum default width of a column (corresponds to card dimensions)
     }
     // Lanes inside this column are rendered side-by-side: <div className="flex gap-4 justify-center w-full">
-    // Inside each lane, we have the lane leader and subordinates rendered side-by-side: <div className="flex gap-1 justify-center">
+    // Inside each lane, we have the lane leader and subordinates rendered in a vertical column.
+    // The width of a lane is determined by the width of the subordinates row (since cards are vertical).
     const lanesWidth = col.lanes.reduce((sum: number, lane: any) => {
-      const laneCardsCount = 1 + (lane.subordinates?.length || 0);
-      const laneWidth = laneCardsCount * 36; // Each vertical card is 26px plus margin/padding spacing
+      const numSubs = lane.subordinates?.length || 0;
+      // Width of subordinates row = n * 26px cards + (n-1) * 4px gap (gap-1 is 4px)
+      const subordinatesWidth = numSubs > 0 ? (numSubs * 26) + (numSubs - 1) * 4 : 26;
+      // Lane width is max of leader (26px) and subordinates row
+      const laneWidth = Math.max(26, subordinatesWidth);
       return sum + laneWidth;
     }, 0);
     // Add gaps between lanes (gap-4 is 16px)
     const totalColumnWidth = lanesWidth + (col.lanes.length - 1) * 16;
-    return Math.max(180, totalColumnWidth);
+    // Return max of default or calculated width, plus a small buffer for safety
+    return Math.max(180, Math.ceil(totalColumnWidth + 10));
   };
 
   // 1. Direct Support columns block width estimation
   const directColWidths = organized.directColumns.map(getColEstimatedWidth);
-  const maxDirectColWidth = directColWidths.length > 0 ? Math.max(...directColWidths) : 0;
   const directColumnsBlockWidth = directColWidths.length > 0
-    ? maxDirectColWidth * organized.directColumns.length + (organized.directColumns.length - 1) * 12 // gap-3 is 12px
+    ? directColWidths.reduce((sum, w) => sum + w, 0) + (organized.directColumns.length - 1) * 12 // gap-3 is 12px
     : 0;
 
   // 2. Main Group blocks width estimation
   const groupWidths = organized.groups.map(group => {
     const colWidths = group.columns.map(getColEstimatedWidth);
-    const maxColWidth = colWidths.length > 0 ? Math.max(...colWidths) : 180;
-    // All columns in a group occupy equal fraction of grid: repeat(cols, 1fr)
-    // Therefore, the total width is the maxColWidth multiplied by the number of columns
-    return maxColWidth * group.columns.length + (group.columns.length - 1) * 12; // gap-3 is 12px
+    const totalColsWidth = colWidths.reduce((sum, w) => sum + w, 0);
+    const calculatedWidth = totalColsWidth + (group.columns.length > 0 ? (group.columns.length - 1) * 12 : 0); // gap-3 is 12px
+    return Math.max(180, calculatedWidth);
   });
 
   // 3. Combined total blocks and gap widths
@@ -176,7 +179,7 @@ export default function OrgChartPreview({
   const totalWidthNeeded = totalBlocksWidth + totalGapsWidth;
 
   // Use dynamic canvas width: minimum is 1400px (standard size), but scales wider up to exactly what is needed
-  const dynamicCanvasWidth = Math.max(1400, Math.ceil(totalWidthNeeded + 60)); // Add a 60px safety margin
+  const dynamicCanvasWidth = Math.max(1400, Math.ceil(totalWidthNeeded + 160)); // Add a 160px safety margin for padding/containment
 
   // Helper to format date from YYYY-MM-DD to YYYYMMDD as seen in reference image
   const formatArmyDate = (dateStr: string): string => {
@@ -596,7 +599,7 @@ export default function OrgChartPreview({
               drag
               dragMomentum={true}
               dragTransition={{ power: 0.2, timeConstant: 200 }}
-              className="space-y-4 select-none origin-top inline-block"
+              className="space-y-4 select-none origin-top inline-block px-20"
               style={{
                 scale: zoom,
                 minWidth: `${dynamicCanvasWidth}px`
@@ -612,17 +615,20 @@ export default function OrgChartPreview({
                   const isHighlighted = activeRelation !== null;
                   
                   return (
-                    <div
-                      id={`card-${oic.id}`}
-                      onMouseEnter={() => setHoveredNode(oic.id)}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onClick={() => setSelectedNode(oic)}
-                      className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
-                        getNodeWarningClass(oic, isHighlighted, true)
-                      }`}
-                    >
-                      <div className="text-xs font-bold uppercase tracking-widest">{oic.rank} {oic.name}</div>
-                      <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(oic)}</div>
+                    <div className="flex justify-center w-full">
+                      <div
+                        id={`card-${oic.id}`}
+                        onMouseEnter={() => setHoveredNode(oic.id)}
+                        onMouseLeave={() => setHoveredNode(null)}
+                        onClick={() => setSelectedNode(oic)}
+                        className={`py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
+                          getNodeWarningClass(oic, isHighlighted, true)
+                        }`}
+                        style={{ width: `${totalWidthNeeded}px` }}
+                      >
+                        <div className="text-xs font-bold uppercase tracking-widest">{oic.rank} {oic.name}</div>
+                        <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(oic)}</div>
+                      </div>
                     </div>
                   );
                 })()
@@ -637,44 +643,42 @@ export default function OrgChartPreview({
                   const isHighlighted = activeRelation !== null;
 
                   return (
-                    <div
-                      id={`card-${leader.id}`}
-                      onMouseEnter={() => setHoveredNode(leader.id)}
-                      onMouseLeave={() => setHoveredNode(null)}
-                      onClick={() => setSelectedNode(leader)}
-                      className={`w-full py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
-                        getNodeWarningClass(leader, isHighlighted, true)
-                      }`}
-                    >
-                      <div className="text-xs font-bold uppercase tracking-widest">{leader.rank} {leader.name}</div>
-                      <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(leader)}</div>
+                    <div className="flex justify-center w-full">
+                      <div
+                        id={`card-${leader.id}`}
+                        onMouseEnter={() => setHoveredNode(leader.id)}
+                        onMouseLeave={() => setHoveredNode(null)}
+                        onClick={() => setSelectedNode(leader)}
+                        className={`py-2.5 rounded-lg border text-center cursor-pointer transition-all ${roleColors.bg} ${roleColors.text} ${roleColors.border} ${
+                          getNodeWarningClass(leader, isHighlighted, true)
+                        }`}
+                        style={{ width: `${totalWidthNeeded}px` }}
+                      >
+                        <div className="text-xs font-bold uppercase tracking-widest">{leader.rank} {leader.name}</div>
+                        <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(leader)}</div>
+                      </div>
                     </div>
                   );
                 })()
               )}
 
               {/* Row 3: Group Leaders & Direct Support side-by-side */}
-              <div className="flex gap-4">
+              <div className="flex gap-4 justify-center w-full">
                 {(() => {
-                  const groupWeights = organized.groups.map(g => Math.max(1, g.columns.length));
-                  const directWeight = Math.max(0, organized.directColumns.length);
-                  const totalWeight = groupWeights.reduce((sum, w) => sum + w, 0) + directWeight;
-
                   return (
                     <>
                        {/* Render Direct Support Columns (rated by OIC/Element Leader directly) */}
                       {organized.directColumns.length > 0 && (
                         <div 
-                          className="space-y-4" 
+                          className="space-y-4 flex-shrink-0" 
                           style={{ 
-                            width: `${(directColumnsBlockWidth / Math.max(1, totalBlocksWidth)) * 100}%`, 
-                            flex: `${directColumnsBlockWidth} 0 0%` 
+                            width: `${directColumnsBlockWidth}px`,
                           }}
                         >
                           {/* Placeholder/Spacer to align with Group Leader row height */}
                           <div className="h-[46px] invisible" />
                           
-                          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${organized.directColumns.length}, minmax(0, 1fr))` }}>
+                          <div className="grid gap-3" style={{ gridTemplateColumns: organized.directColumns.map(col => `${getColEstimatedWidth(col)}px`).join(" ") }}>
                             {organized.directColumns.map((col) => {
                               const header = col.header;
                               const headerColors = getRoleColors(header.role);
@@ -771,8 +775,8 @@ export default function OrgChartPreview({
                         return (
                           <div 
                             key={groupBlock.leader.id} 
-                            className="space-y-4" 
-                            style={{ width: `${flexPercent}%`, flex: `${groupWidth} 0 0%` }}
+                            className="space-y-4 flex-shrink-0" 
+                            style={{ width: `${groupWidth}px` }}
                           >
                             <div
                               id={`card-${leader.id}`}
@@ -793,7 +797,7 @@ export default function OrgChartPreview({
                             </div>
 
                             {groupBlock.columns.length > 0 && (
-                              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${groupBlock.columns.length}, minmax(0, 1fr))` }}>
+                              <div className="grid gap-3" style={{ gridTemplateColumns: groupBlock.columns.map(col => `${getColEstimatedWidth(col)}px`).join(" ") }}>
                                 {groupBlock.columns.map((col) => {
                                   const header = col.header;
                                   const headerColors = getRoleColors(header.role);

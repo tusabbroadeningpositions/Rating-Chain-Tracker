@@ -48,17 +48,6 @@ export interface OrganizedChart {
  * Level 5: Subordinates - Stacked vertically under their Column Header
  */
 export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
-  // Find OIC
-  const oic = records.find(r => r.role === RatingRole.OIC) || null;
-
-  // Find Element Leader (SGM / Leader whose rater is OIC or who has Role = ELEMENT_LEADER)
-  const elementLeader = records.find(r => r.role === RatingRole.ELEMENT_LEADER) || null;
-
-  // Find Group Leaders (Blue) and Key Leaders (Purple)
-  const groupAndKeyLeaders = records.filter(
-    r => r.role === RatingRole.GROUP_LEADER || r.role === RatingRole.KEY_LEADER
-  );
-
   // Helper to check if a record is rated by a leader
   const isRatedBy = (record: ArmyRatingRecord, leader: ArmyRatingRecord) => {
     if (!record.raterId) return false;
@@ -74,12 +63,34 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
     return false;
   };
 
+  // Find OIC
+  const oic = records.find(r => r.role === RatingRole.OIC) || null;
+
+  // Find Element Leader (SGM / Leader whose rater is OIC or who has Role = ELEMENT_LEADER)
+  const elementLeader = records.find(r => r.role === RatingRole.ELEMENT_LEADER) || null;
+
+  // Find Group Leaders (Blue) and Key Leaders (Purple)
+  const groupAndKeyLeadersAll = records.filter(
+    r => r.role === RatingRole.GROUP_LEADER || r.role === RatingRole.KEY_LEADER
+  );
+
+  // Top level group leaders (not rated by another group/key leader)
+  const groupAndKeyLeaders = groupAndKeyLeadersAll.filter(
+    r => !groupAndKeyLeadersAll.some(other => isRatedBy(r, other))
+  );
+
+  const topLevelGroupLeaderIds = new Set(groupAndKeyLeaders.map(l => l.id));
+
   // Helper to build columns for a leader
   const buildColumnsForLeader = (leader: ArmyRatingRecord): ChartColumn[] => {
     let headers = records.filter(r => isRatedBy(r, leader));
-    headers = headers.filter(
-      h => h.role !== RatingRole.OIC && h.role !== RatingRole.ELEMENT_LEADER && h.role !== RatingRole.GROUP_LEADER && h.role !== RatingRole.KEY_LEADER
-    );
+    headers = headers.filter(h => {
+      if (h.role === RatingRole.OIC || h.role === RatingRole.ELEMENT_LEADER) return false;
+      // Filter out top-level group leaders since they have their own top-level blocks.
+      // But ALLOW nested group/key leaders to be column headers!
+      if (topLevelGroupLeaderIds.has(h.id)) return false;
+      return true;
+    });
 
     const columns: ChartColumn[] = headers.map(header => {
       const descendants: ArmyRatingRecord[] = [];
@@ -107,15 +118,14 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
       };
 
       const verticalStack = descendants
-        .filter(d => d.role !== RatingRole.GROUP_LEADER && d.role !== RatingRole.KEY_LEADER)
+        .filter(d => d.role !== RatingRole.OIC && d.role !== RatingRole.ELEMENT_LEADER && !topLevelGroupLeaderIds.has(d.id))
         .sort((a, b) => (rolePriority[a.role] || 9) - (rolePriority[b.role] || 9));
 
       const laneLeaders = records.filter(
         r => isRatedBy(r, header) &&
         r.role !== RatingRole.OIC &&
         r.role !== RatingRole.ELEMENT_LEADER &&
-        r.role !== RatingRole.GROUP_LEADER &&
-        r.role !== RatingRole.KEY_LEADER
+        !topLevelGroupLeaderIds.has(r.id)
       );
 
       laneLeaders.sort((a, b) => (rolePriority[a.role] || 9) - (rolePriority[b.role] || 9));
@@ -133,7 +143,7 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
         gatherSubordinateDescendants(laneLeader);
 
         const subordinates = descendantsList
-          .filter(d => d.role !== RatingRole.GROUP_LEADER && d.role !== RatingRole.KEY_LEADER)
+          .filter(d => d.role !== RatingRole.OIC && d.role !== RatingRole.ELEMENT_LEADER && !topLevelGroupLeaderIds.has(d.id))
           .sort((a, b) => (rolePriority[a.role] || 9) - (rolePriority[b.role] || 9));
 
         return { laneLeader, subordinates };
@@ -144,6 +154,8 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
 
     columns.sort((a, b) => {
       const roleOrder = {
+        [RatingRole.GROUP_LEADER]: 0,
+        [RatingRole.KEY_LEADER]: 0,
         [RatingRole.SECTION_LEADER]: 1,
         [RatingRole.MASTER_MUSICIAN]: 2,
         [RatingRole.SENIOR_MUSICIAN]: 3,
