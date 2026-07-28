@@ -15,6 +15,7 @@ import { getRoleColors } from "../utils/orgChartLayout";
 import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
 import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
+import { exportNcoerReportToPPTX } from "../utils/pptxExport";
 
 interface RatingTableProps {
   records: ArmyRatingRecord[];
@@ -120,7 +121,6 @@ export default function RatingTable({
     const [reportSearch, setReportSearch] = useState("");
     const [filterCategory, setFilterCategory] = useState<string>("all");
     const reportRef = useRef<HTMLDivElement>(null);
-    const [isExportingImage, setIsExportingImage] = useState(false);
 
     const baseReportItems = useMemo(() => getReportItems(), []);
     
@@ -155,7 +155,7 @@ export default function RatingTable({
             case "signatures_edits":
               return status === "Out for Signatures" || status === "Returned for Edits";
             case "0_29_past":
-              return diffDays >= 0 && diffDays < 30;
+              return diffDays >= 0 && diffDays < 30 && status === "Not Submitted to HR";
             case "late_hqda":
               return isPastHqda && status !== "Submitted to HQDA";
             default:
@@ -189,6 +189,8 @@ export default function RatingTable({
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
+    const rankCounts: Record<string, number> = {};
+
     reportItems.forEach(item => {
       if (item.thru) {
         const thruDate = new Date(item.thru);
@@ -197,28 +199,9 @@ export default function RatingTable({
         if (diffDays < 0) totalPastDue++;
         else totalComingDue++;
       }
+      const r = item.record.rank || "Unknown";
+      rankCounts[r] = (rankCounts[r] || 0) + 1;
     });
-
-    const handleDownloadImage = async () => {
-      if (!reportRef.current) return;
-      setIsExportingImage(true);
-      try {
-        const dataUrl = await htmlToImage.toPng(reportRef.current, {
-          backgroundColor: '#ffffff',
-          quality: 1,
-          pixelRatio: 2
-        });
-        const link = document.createElement('a');
-        const date = new Date().toISOString().split('T')[0];
-        link.download = `NCOER_Status_Report_${date}.png`;
-        link.href = dataUrl;
-        link.click();
-      } catch (err) {
-        console.error('oops, something went wrong!', err);
-      } finally {
-        setIsExportingImage(false);
-      }
-    };
 
     return (
       <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
@@ -246,7 +229,7 @@ export default function RatingTable({
                      <option value="30plus_not_submitted" className="bg-slate-800">30+ DAYS PAST THRU (NOT SUBMITTED)</option>
                      <option value="reviewing" className="bg-slate-800">REVIEWING - HR OR CSM</option>
                      <option value="signatures_edits" className="bg-slate-800">OUT FOR SIGNATURES / EDITS</option>
-                     <option value="0_29_past" className="bg-slate-800">0 TO 29 DAYS PAST THRU</option>
+                     <option value="0_29_past" className="bg-slate-800">0 TO 29 DAYS PAST THRU (NOT SUBMITTED)</option>
                      <option value="late_hqda" className="bg-slate-800">LATE TO HQDA</option>
                    </select>
 
@@ -311,7 +294,8 @@ export default function RatingTable({
                 {/* Table View */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-700 text-[10px] font-black uppercase tracking-widest text-white items-center">
-                    <div className="col-span-3">Soldier (Rank / Name)</div>
+                    <div className="col-span-2">Soldier (Rank / Name)</div>
+                    <div className="col-span-1">Element</div>
                     <div className="col-span-2">Duty Title & MOSC</div>
                     <div className="col-span-2 text-center">Thru Date (Days)</div>
                     <div className="col-span-2">Rater / Senior Rater</div>
@@ -352,13 +336,16 @@ export default function RatingTable({
 
                       return (
                         <div key={idx} className={`grid grid-cols-12 gap-4 px-4 py-4 items-center text-[11px] ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}`}>
-                          <div className="col-span-3 flex items-center gap-3">
+                          <div className="col-span-2 flex items-center gap-3">
                             <div className="w-8 h-8 bg-white border border-slate-200 rounded flex items-center justify-center font-bold text-slate-600 shadow-sm shrink-0">
                               {item.record.rank}
                             </div>
                             <div className="min-w-0">
                               <p className="font-black text-slate-800 uppercase leading-none truncate">{item.record.name}</p>
                             </div>
+                          </div>
+                          <div className="col-span-1">
+                            <span className="font-semibold text-slate-500 uppercase">{item.record.element || "—"}</span>
                           </div>
                           <div className="col-span-2">
                             <p className="font-bold text-slate-600 leading-tight text-[10px]">
@@ -408,17 +395,19 @@ export default function RatingTable({
             <div className="flex gap-3">
               <button
                 onClick={() => setIsShowingReportPreview(false)}
-                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest"
+                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest cursor-pointer"
               >
                 Close Preview
               </button>
               <button
-                disabled={isExportingImage}
-                onClick={handleDownloadImage}
-                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest flex items-center gap-2"
+                onClick={() => {
+                  exportNcoerReportToPPTX(allRecords || [], records, activeSchemeName);
+                  setIsShowingReportPreview(false);
+                }}
+                className="px-6 py-2.5 bg-amber-600 text-white hover:bg-amber-700 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-amber-200 cursor-pointer"
               >
-                {isExportingImage ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-500" />}
-                Download as Image
+                <Layers className="w-4 h-4" />
+                Download PowerPoint (PPTX)
               </button>
               <button
                 onClick={() => {
@@ -1054,12 +1043,13 @@ export default function RatingTable({
       doc.setTextColor(255, 255, 255);
 
       doc.text("SOLDIER (RANK / NAME)", 17, startY + 5.5);
-      doc.text("DUTY TITLE & MOSC", 64, startY + 5.5);
-      doc.text("THRU DATE (DAYS)", 112, startY + 5.5);
-      doc.text("RATER", 142, startY + 5.5);
-      doc.text("SENIOR RATER", 179, startY + 5.5);
-      doc.text("NCOER STATUS", 216, startY + 5.5);
-      doc.text("DUE TO HQDA", 253, startY + 5.5);
+      doc.text("ELEMENT", 61, startY + 5.5);
+      doc.text("DUTY TITLE & MOSC", 81, startY + 5.5);
+      doc.text("THRU DATE (DAYS)", 115, startY + 5.5);
+      doc.text("RATER", 143, startY + 5.5);
+      doc.text("SENIOR RATER", 177, startY + 5.5);
+      doc.text("NCOER STATUS", 211, startY + 5.5);
+      doc.text("DUE TO HQDA", 249, startY + 5.5);
     };
 
     const drawStatusPill = (x: number, y: number, w: number, h: number, status: string, isCustom: boolean) => {
@@ -1085,11 +1075,8 @@ export default function RatingTable({
               textCol = [255, 255, 255];
               break;
             case "Returned for Edits":
-              bg = [217, 119, 6]; // amber-600
-              textCol = [255, 255, 255];
-              break;
             case "Out for Signatures":
-              bg = [79, 70, 229]; // indigo-600
+              bg = [217, 119, 6]; // amber-600
               textCol = [255, 255, 255];
               break;
             case "Submitted to HQDA":
@@ -1247,10 +1234,10 @@ export default function RatingTable({
       const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : r.raterId;
       const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : r.seniorRaterId;
 
-      const soldierLines = doc.splitTextToSize(soldierNameStr, 44) as string[];
-      const roleLines = doc.splitTextToSize(moscAndRole, 45) as string[];
-      const raterLines = doc.splitTextToSize(helperGetName(raterToUse), 34) as string[];
-      const srLines = doc.splitTextToSize(helperGetName(srToUse), 34) as string[];
+      const soldierLines = doc.splitTextToSize(soldierNameStr, 41) as string[];
+      const roleLines = doc.splitTextToSize(moscAndRole, 30) as string[];
+      const raterLines = doc.splitTextToSize(helperGetName(raterToUse), 30) as string[];
+      const srLines = doc.splitTextToSize(helperGetName(srToUse), 30) as string[];
 
       const maxLines = Math.max(soldierLines.length, roleLines.length, raterLines.length, srLines.length, 1.5);
       const rowHeight = Math.max(9, maxLines * 4.2 + 2);
@@ -1285,6 +1272,12 @@ export default function RatingTable({
         doc.text(line, 17, y + 4.5 + lIdx * 4);
       });
 
+      // Col 1.5: Element
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(r.element || "—", 61, y + 4.5);
+
       // Col 2: Role & MOSC
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
@@ -1294,7 +1287,7 @@ export default function RatingTable({
           doc.setFont("helvetica", "bold");
           doc.setTextColor(14, 116, 144); // cyan-700
         }
-        doc.text(line, 64, y + 4.2 + lIdx * 3.8);
+        doc.text(line, 81, y + 4.2 + lIdx * 3.8);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(71, 85, 105);
       });
@@ -1303,29 +1296,29 @@ export default function RatingTable({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.setTextColor(30, 41, 59);
-      doc.text(formatNiceDate(thruToUse), 112, y + 4.5);
+      doc.text(formatNiceDate(thruToUse), 115, y + 4.5);
       
       doc.setFontSize(7);
       doc.setTextColor(daysInfo.color[0], daysInfo.color[1], daysInfo.color[2]);
-      doc.text(daysInfo.text, 112, y + 8.5);
+      doc.text(daysInfo.text, 115, y + 8.5);
 
       // Col 4: Rater
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
       raterLines.forEach((line, lIdx) => {
-        doc.text(line, 142, y + 4.5 + lIdx * 3.8);
+        doc.text(line, 143, y + 4.5 + lIdx * 3.8);
       });
 
       // Col 5: Senior Rater
       srLines.forEach((line, lIdx) => {
-        doc.text(line, 179, y + 4.5 + lIdx * 3.8);
+        doc.text(line, 177, y + 4.5 + lIdx * 3.8);
       });
 
       // Col 6: NCOER Status Pill
       const statusPillW = 30;
       const statusPillH = 6.5;
-      const statusPillX = 218;
+      const statusPillX = 212;
       const statusPillY = y + (rowHeight - statusPillH) / 2 - 0.5;
       drawStatusPill(statusPillX, statusPillY, statusPillW, statusPillH, statusToDraw, ncoerInfo.isCustom);
 
@@ -1334,7 +1327,7 @@ export default function RatingTable({
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
       const hqdaDueStr = isActuallyLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));
-      doc.text(formatNiceDate(hqdaDueStr), 253, y + 4.5);
+      doc.text(formatNiceDate(hqdaDueStr), 249, y + 4.5);
 
       y += rowHeight;
     });
@@ -2054,12 +2047,9 @@ export default function RatingTable({
             badgeClass = "bg-blue-600 text-white border-blue-700 font-extrabold shadow-sm";
             break;
           case "Returned for Edits":
+          case "Out for Signatures":
             bgClass = "bg-amber-100 text-amber-950";
             badgeClass = "bg-amber-600 text-white border-amber-700 font-extrabold shadow-sm";
-            break;
-          case "Out for Signatures":
-            bgClass = "bg-indigo-100 text-indigo-950";
-            badgeClass = "bg-indigo-600 text-white border-indigo-700 font-extrabold shadow-sm";
             break;
           case "Submitted to HQDA":
             bgClass = "bg-emerald-100 text-emerald-950";
@@ -2387,15 +2377,26 @@ export default function RatingTable({
               Export Excel (.xlsx)
             </button>
             {selectedVersion === "current" && (
-              <button
-                onClick={handleExportNcoerReport}
-                className="px-3 py-1.5 text-white bg-slate-800 hover:bg-slate-900 border border-slate-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-                id="btn-export-ncoer-pdf"
-                title="Exports a professional PDF report showing NCOERs due within 30 days or past due"
-              >
-                <FileDown className="w-3.5 h-3.5 text-amber-500" />
-                Export NCOER Report (PDF)
-              </button>
+              <>
+                <button
+                  onClick={handleExportNcoerReport}
+                  className="px-3 py-1.5 text-white bg-slate-800 hover:bg-slate-900 border border-slate-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                  id="btn-export-ncoer-pdf"
+                  title="Exports a professional PDF report showing NCOERs due within 30 days or past due"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-amber-500" />
+                  Export NCOER Report (PDF)
+                </button>
+                <button
+                  onClick={() => exportNcoerReportToPPTX(allRecords || [], records, activeSchemeName)}
+                  className="px-3 py-1.5 text-white bg-amber-600 hover:bg-amber-700 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                  id="btn-export-ncoer-pptx"
+                  title="Exports a professional PowerPoint report slide deck containing NCOER categorizations"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Export NCOER Report (PPTX)
+                </button>
+              </>
             )}
             {readOnly && (
               <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">

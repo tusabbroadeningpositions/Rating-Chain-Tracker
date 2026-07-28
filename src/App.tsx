@@ -12,6 +12,7 @@ import OrgChartPreview from "./components/OrgChartPreview";
 import ConfirmDialog from "./components/ConfirmDialog";
 import Auth from "./components/Auth";
 import SchemeSelector from "./components/SchemeSelector";
+import GlobalExportDropdown from "./components/GlobalExportDropdown";
 import { Network, List, Shield, HelpCircle, Users, Layers, Sparkles, LogIn, Cloud, Smartphone, Monitor, Trash2, AlertTriangle } from "lucide-react";
 import { auth } from "./lib/firebase";
 import { onAuthStateChanged, User, signInAnonymously } from "firebase/auth";
@@ -655,6 +656,24 @@ export default function App() {
   const totalCount = filteredRecords.length;
   const groupLeaderCount = filteredRecords.filter(r => r.role === RatingRole.GROUP_LEADER).length;
   const sectionLeaderCount = filteredRecords.filter(r => r.role === RatingRole.SECTION_LEADER).length;
+
+  const rankCounts: Record<string, number> = {};
+  filteredRecords.forEach(r => {
+    const rk = (r.rank || "").trim().toUpperCase();
+    if (rk) {
+      rankCounts[rk] = (rankCounts[rk] || 0) + 1;
+    }
+  });
+
+  const sortedRanks = Object.entries(rankCounts).sort((a, b) => {
+    const rankOrder = ["CSM", "SGM", "1SG", "MSG", "SFC", "SSG", "SGT", "CPL", "SPC", "PFC", "PV2", "PV1"];
+    const idxA = rankOrder.indexOf(a[0]);
+    const idxB = rankOrder.indexOf(b[0]);
+    if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
+    if (idxA === -1) return 1;
+    if (idxB === -1) return -1;
+    return idxA - idxB;
+  });
   
   if (isLoading) {
     return (
@@ -736,15 +755,23 @@ export default function App() {
             )}
             
             {user && !user.isAnonymous && (
-              <SchemeSelector 
-                userId={user.uid}
-                schemes={schemes}
-                activeSchemeId={activeSchemeId}
-                onSelect={setActiveSchemeId}
-                onDelete={handleSchemeDelete}
-                onRename={handleRenameScheme}
-                onDuplicate={handleDuplicateScheme}
-              />
+              <div className="flex items-center gap-2">
+                <SchemeSelector 
+                  userId={user.uid}
+                  schemes={schemes}
+                  activeSchemeId={activeSchemeId}
+                  onSelect={setActiveSchemeId}
+                  onDelete={handleSchemeDelete}
+                  onRename={handleRenameScheme}
+                  onDuplicate={handleDuplicateScheme}
+                />
+                <GlobalExportDropdown
+                  schemes={schemes}
+                  activeSchemeId={activeSchemeId}
+                  currentRecords={records}
+                  user={user}
+                />
+              </div>
             )}
             
             {/* Show Auth here on desktop */}
@@ -753,25 +780,38 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-1.5 sm:gap-2 justify-between sm:justify-center w-full lg:w-auto">
-            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[80px] text-center">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 justify-between sm:justify-center w-full lg:w-auto">
+            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[75px] text-center">
               <div className="text-[8px] font-semibold text-slate-500 uppercase tracking-tighter flex items-center gap-1 justify-center">
                 Soldiers
               </div>
               <div className="text-xs font-bold text-slate-100">{totalCount}</div>
             </div>
-            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[80px] text-center">
+            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[75px] text-center">
               <div className="text-[8px] font-semibold text-slate-500 uppercase tracking-tighter flex items-center gap-1 justify-center">
                 Group Ldr
               </div>
               <div className="text-xs font-bold text-slate-100">{groupLeaderCount}</div>
             </div>
-            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[80px] text-center">
+            <div className="flex-1 sm:flex-initial px-2 py-0.5 bg-slate-800/50 border border-slate-700 rounded shadow-sm min-w-[60px] sm:min-w-[75px] text-center">
               <div className="text-[8px] font-semibold text-slate-500 uppercase tracking-tighter flex items-center gap-1 justify-center">
                 Section Ldr
               </div>
               <div className="text-xs font-bold text-slate-100">{sectionLeaderCount}</div>
             </div>
+
+            {sortedRanks.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 pl-1.5 sm:pl-2 border-l border-slate-700/80 ml-0.5">
+                {sortedRanks.map(([rank, count]) => (
+                  <div key={rank} className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded shadow-sm min-w-[42px] text-center">
+                    <div className="text-[8px] font-bold text-amber-400 uppercase tracking-tighter">
+                      {rank}
+                    </div>
+                    <div className="text-xs font-bold text-slate-100">{count}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
@@ -1095,6 +1135,14 @@ export default function App() {
                   onEditClick={handleEditClick}
                   readOnly={!canEdit}
                   activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
+                  effectiveAsOf={currentScheme?.effectiveAsOf || ""}
+                  proposedDate={
+                    selectedVersion === "future"
+                      ? currentScheme?.proposedEffectiveDateFuture || ""
+                      : selectedVersion === "alternate"
+                      ? currentScheme?.proposedEffectiveDateAlternate || ""
+                      : ""
+                  }
                 />
               )}
 

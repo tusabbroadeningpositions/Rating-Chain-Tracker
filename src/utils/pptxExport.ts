@@ -4,7 +4,7 @@
  */
 
 import pptxgen from "pptxgenjs";
-import { ArmyRatingRecord, RatingRole } from "../types";
+import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "./orgChartLayout";
 
 // Helper to format date from YYYY-MM-DD to YYYYMMDD
@@ -17,49 +17,90 @@ function formatArmyDate(dateStr: string): string {
  * Exports the Army Rating Scheme records to a high-quality PowerPoint slide
  * that perfectly mirrors the layout in the user's reference image.
  */
-export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "Army Rating Scheme", chartDate: string = "") {
-  // Organize the chart data using our layout logic
+/**
+ * Calculates the slide width required for an org chart based on records.
+ */
+export function getRequiredSlideWidth(records: ArmyRatingRecord[]): number {
+  if (!records || records.length === 0) return 18;
   const organized = organizeChartData(records);
-
-  const formattedChartDate = formatArmyDate(chartDate);
-
-  // Constants and settings for slide layout (in inches)
   const marginX = 0.2;
   const colGap = 0.04;
   const groupGap = 0.08;
   const laneGap = 0.05;
-  const cardSubGapPreferred = 0.015; // optimal gap between cards placed side-by-side
-  const wCardPreferred = 0.35; // optimal comfortable card width
+  const cardSubGapPreferred = 0.015;
+  const wCardPreferred = 0.35;
 
-  // Calculate minimum required width for each column to guarantee NO collision
   const getColMinWidth = (col: any): number => {
     const numLanes = col.lanes.length;
-    if (numLanes === 0) {
-      return 0.8; // default column width to make text readable
-    }
+    if (numLanes === 0) return 0.8;
     let maxLaneWidth = wCardPreferred;
     col.lanes.forEach((lane: any) => {
       const numSubs = lane.subordinates.length;
       const laneWidth = Math.max(wCardPreferred, numSubs * wCardPreferred + (numSubs - 1) * cardSubGapPreferred);
-      if (laneWidth > maxLaneWidth) {
-        maxLaneWidth = laneWidth;
-      }
+      if (laneWidth > maxLaneWidth) maxLaneWidth = laneWidth;
     });
-    const colWidth = numLanes * maxLaneWidth + (numLanes - 1) * laneGap;
-    return Math.max(0.8, colWidth);
+    return Math.max(0.8, numLanes * maxLaneWidth + (numLanes - 1) * laneGap);
   };
 
-  // Compute minimum widths for all columns
   organized.groups.forEach((group) => {
-    group.columns.forEach((col: any) => {
-      col.minWidth = getColMinWidth(col);
-    });
+    group.columns.forEach((col: any) => { col.minWidth = getColMinWidth(col); });
   });
-  organized.directColumns.forEach((col: any) => {
-    col.minWidth = getColMinWidth(col);
+  organized.directColumns.forEach((col: any) => { col.minWidth = getColMinWidth(col); });
+
+  const groupMinWidths = organized.groups.map(group => {
+    if (group.columns.length === 0) return 1.0;
+    return group.columns.reduce((sum: number, col: any) => sum + col.minWidth, 0) + colGap * (group.columns.length - 1);
   });
 
-  // Now, calculate group minimum widths
+  const directColsMinWidth = organized.directColumns.length > 0
+    ? organized.directColumns.reduce((sum: number, col: any) => sum + col.minWidth, 0) + colGap * (organized.directColumns.length - 1)
+    : 0;
+
+  const numGroups = organized.groups.length;
+  const numLogicalGroups = numGroups + (organized.directColumns.length > 0 ? 1 : 0);
+  const totalGroupGaps = groupGap * (numLogicalGroups - 1);
+  const totalMinAvailableWidth = groupMinWidths.reduce((sum, w) => sum + w, 0) + directColsMinWidth + totalGroupGaps;
+
+  return Math.min(55, Math.max(18, Math.ceil((totalMinAvailableWidth + marginX * 2) * 10) / 10));
+}
+
+/**
+ * Draws a single org chart bubble map slide on an existing pptx instance.
+ */
+export function drawOrgChartSlide(
+  pptx: any, 
+  records: ArmyRatingRecord[], 
+  titleText: string = "Army Rating Scheme", 
+  chartDate: string = "",
+  customSlideWidth?: number
+) {
+  const organized = organizeChartData(records);
+  const formattedChartDate = formatArmyDate(chartDate);
+
+  const marginX = 0.2;
+  const colGap = 0.04;
+  const groupGap = 0.08;
+  const laneGap = 0.05;
+  const cardSubGapPreferred = 0.015;
+  const wCardPreferred = 0.35;
+
+  const getColMinWidth = (col: any): number => {
+    const numLanes = col.lanes.length;
+    if (numLanes === 0) return 0.8;
+    let maxLaneWidth = wCardPreferred;
+    col.lanes.forEach((lane: any) => {
+      const numSubs = lane.subordinates.length;
+      const laneWidth = Math.max(wCardPreferred, numSubs * wCardPreferred + (numSubs - 1) * cardSubGapPreferred);
+      if (laneWidth > maxLaneWidth) maxLaneWidth = laneWidth;
+    });
+    return Math.max(0.8, numLanes * maxLaneWidth + (numLanes - 1) * laneGap);
+  };
+
+  organized.groups.forEach((group) => {
+    group.columns.forEach((col: any) => { col.minWidth = getColMinWidth(col); });
+  });
+  organized.directColumns.forEach((col: any) => { col.minWidth = getColMinWidth(col); });
+
   const groupMinWidths = organized.groups.map(group => {
     if (group.columns.length === 0) return 1.0;
     const sumCols = group.columns.reduce((sum: number, col: any) => sum + col.minWidth, 0);
@@ -70,46 +111,44 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     ? organized.directColumns.reduce((sum: number, col: any) => sum + col.minWidth, 0) + colGap * (organized.directColumns.length - 1)
     : 0;
 
-  // Calculate total minimum available width needed
   const numGroups = organized.groups.length;
   const numLogicalGroups = numGroups + (organized.directColumns.length > 0 ? 1 : 0);
   const totalGroupGaps = groupGap * (numLogicalGroups - 1);
   const totalMinAvailableWidth = groupMinWidths.reduce((sum, w) => sum + w, 0) + directColsMinWidth + totalGroupGaps;
 
-  // Set slide width dynamically: at least 18 inches, scaling wider to perfectly fit everyone up to 55 inches
-  const slideWidth = Math.min(55, Math.max(18, Math.ceil((totalMinAvailableWidth + marginX * 2) * 10) / 10));
-  const slideHeight = 7.5;
+  const slideWidth = customSlideWidth || Math.min(55, Math.max(18, Math.ceil((totalMinAvailableWidth + marginX * 2) * 10) / 10));
   const availableWidth = slideWidth - (marginX * 2);
 
-  // Initialize PPTX presentation with our dynamically computed layout width
-  const pptx = new pptxgen();
-  pptx.defineLayout({ name: "CUSTOM_LAYOUT", width: slideWidth, height: slideHeight });
-  pptx.layout = "CUSTOM_LAYOUT";
-
-  // Add slide
   const slide = pptx.addSlide();
 
-  // Heights of rows - increased to make the canvas feel larger and less squeezed
+  if (records.length === 0) {
+    slide.addText(`${titleText.toUpperCase()}`, {
+      x: marginX,
+      y: 0.3,
+      w: availableWidth,
+      h: 0.5,
+      fontSize: 16,
+      fontFace: "Inter",
+      color: "1E293B",
+      bold: true,
+      align: "center"
+    });
+    slide.addText("No rating scheme records found for this profile.", {
+      x: marginX,
+      y: 3.0,
+      w: availableWidth,
+      h: 1.0,
+      fontSize: 14,
+      color: "64748B",
+      align: "center",
+      italic: true
+    });
+    return;
+  }
+
   const rowHeight = 0.45;
   const rowGap = 0.08;
 
-  // Calculate sum of minWidths of all columns
-  let totalColsMinWidthSum = 0;
-  organized.groups.forEach(g => {
-    g.columns.forEach((c: any) => {
-      totalColsMinWidthSum += c.minWidth;
-    });
-  });
-  organized.directColumns.forEach((c: any) => {
-    totalColsMinWidthSum += c.minWidth;
-  });
-
-  // Determine scaling factor
-  // availableWidth = totalColsMinWidthSum * scaleFactor + gaps
-  // Since gaps are also scaled, we can solve for scaleFactor:
-  // availableWidth = (totalColsMinWidthSum + totalMinGapsSum) * scaleFactor
-  // But wait, the previous logic was: totalColWidthsAvailable = availableWidth - gaps
-  // Let's keep it simple: scaleFactor = availableWidth / totalMinAvailableWidth
   const colScaleFactor = totalMinAvailableWidth > 0 ? (availableWidth / totalMinAvailableWidth) : 1;
   const scaleLimit = Math.min(1, colScaleFactor);
 
@@ -117,43 +156,23 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   const scaledGroupGap = groupGap * scaleLimit;
   const scaledLaneGap = laneGap * scaleLimit;
 
-  // Determine sum of gaps on the slide to find available column width
-  let totalColGapsSum = 0;
-  organized.groups.forEach(g => {
-    if (g.columns.length > 0) {
-      totalColGapsSum += scaledColGap * (g.columns.length - 1);
-    }
-  });
-  if (organized.directColumns.length > 0) {
-    totalColGapsSum += scaledColGap * (organized.directColumns.length - 1);
-  }
-
-  const totalGroupGapsSum = scaledGroupGap * (Math.max(0, numLogicalGroups - 1));
-  const totalGapsWidth = totalGroupGapsSum + totalColGapsSum;
-  const totalColWidthsAvailable = availableWidth - totalGapsWidth;
-
   const wCard = wCardPreferred * scaleLimit;
   const cardSubGap = cardSubGapPreferred * scaleLimit;
   const cardFontSize = wCard < 0.18 ? 5.5 : wCard < 0.24 ? 6.5 : 7.5;
 
-  // Row Y positions
   const yOic = 0.2;
-  const yElementLeader = yOic + rowHeight + rowGap; // 0.2 + 0.45 + 0.08 = 0.73
-  const yGroupLeader = yElementLeader + rowHeight + rowGap; // 0.73 + 0.45 + 0.08 = 1.26
-  const yColHeader = yGroupLeader + rowHeight + rowGap; // 1.26 + 0.45 + 0.08 = 1.79
-  const yVerticalStackStart = yColHeader + rowHeight + rowGap; // 1.79 + 0.45 + 0.08 = 2.32
+  const yElementLeader = yOic + rowHeight + rowGap;
+  const yGroupLeader = yElementLeader + rowHeight + rowGap;
+  const yColHeader = yGroupLeader + rowHeight + rowGap;
+  const yVerticalStackStart = yColHeader + rowHeight + rowGap;
 
-  // Space left for vertical stacks and legend
-  // We place the Legend at Y: 6.8 to 7.3 inches
   const legendY = 6.85;
   const legendTitleY = 6.45;
-  const maxVerticalHeight = legendTitleY - yVerticalStackStart - 0.15; // ~3.98 inches
+  const maxVerticalHeight = legendTitleY - yVerticalStackStart - 0.15;
 
-  // Split the vertical area into exactly 2 rows of vertical cards (non-musicians on top, musicians on bottom)
   const cardRowGap = 0.1;
-  const cardHeight = (maxVerticalHeight - cardRowGap) / 2; // ~1.94 inches each
-  
-  // Calculate allocated width for all columns
+  const cardHeight = (maxVerticalHeight - cardRowGap) / 2;
+
   organized.groups.forEach((group) => {
     group.columns.forEach((col: any) => {
       col.allocatedWidth = col.minWidth * colScaleFactor;
@@ -163,14 +182,12 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     col.allocatedWidth = col.minWidth * colScaleFactor;
   });
 
-  // Calculate allocated group width function
   const getGroupAllocatedWidth = (g: any): number => {
     if (g.columns.length === 0) return 1.0;
     const colsWidthSum = g.columns.reduce((sum: number, col: any) => sum + col.allocatedWidth, 0);
     return colsWidthSum + colGap * (g.columns.length - 1);
   };
 
-  // Calculate the exact total width occupied by the lower rows to center them and flush align OIC / Element Leader
   let totalDrawnWidth = 0;
   if (organized.directColumns.length > 0) {
     const directColsWidth = organized.directColumns.reduce((sum: number, col: any) => sum + col.allocatedWidth, 0) + scaledColGap * (Math.max(0, organized.directColumns.length - 1));
@@ -187,6 +204,26 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
 
   const actualW = totalDrawnWidth > 0 ? totalDrawnWidth : availableWidth;
   const startX = totalDrawnWidth > 0 ? marginX + (availableWidth - totalDrawnWidth) / 2 : marginX;
+
+  // Header Title Text at top if provided
+  if (titleText && titleText !== "Army Rating Scheme") {
+    let headerText = titleText.toUpperCase();
+    if (chartDate && !headerText.includes("CURRENT AS OF") && !headerText.includes("PROJECTED")) {
+      headerText = `${headerText} CURRENT AS OF ${chartDate.toUpperCase()}`;
+    }
+
+    slide.addText(headerText, {
+      x: marginX,
+      y: 0.01,
+      w: availableWidth,
+      h: 0.18,
+      fontSize: 8.5,
+      fontFace: "Inter",
+      color: "334155",
+      bold: true,
+      align: "center"
+    });
+  }
 
   // --- Draw Row 1: OIC ---
   if (organized.oic) {
@@ -256,7 +293,6 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   if (organized.groups.length > 0 || organized.directColumns.length > 0) {
     let currentX = startX;
 
-    // Helper to draw a single column
     const drawColumn = (col: any, xCol: number, wCol: number) => {
       const headerColors = getRoleColors(col.header.role);
       const dateToUse = formatArmyDate(col.header.thru);
@@ -381,7 +417,6 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       }
     };
 
-    // 1. Draw Direct Support Columns
     if (organized.directColumns.length > 0) {
       let colX = currentX;
       organized.directColumns.forEach((col: any) => {
@@ -394,7 +429,6 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       currentX += directColsAllocatedWidth + scaledGroupGap;
     }
 
-    // 2. Draw Group Leader Blocks
     organized.groups.forEach((group) => {
       const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
@@ -403,7 +437,6 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? ` (${group.leader.keyLeaderTitle.toUpperCase()})` : "";
       const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}\n${leaderDate}`;
 
-      // Draw Group Leader Box
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xGroup,
         y: yGroupLeader,
@@ -440,7 +473,6 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   }
 
   // --- Draw LEGEND ---
-  // Draw Legend Section Header
   slide.addText("LEGEND", {
     x: marginX,
     y: legendTitleY,
@@ -500,9 +532,19 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
       autoFit: true
     });
   });
+}
 
-  // 4. Save/Export PPTX file
-  // Using pptxgenjs write method to trigger a download in-browser
+/**
+ * Exports single profile Army Rating Scheme to PowerPoint
+ */
+export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "Army Rating Scheme", chartDate: string = "") {
+  const reqWidth = getRequiredSlideWidth(records);
+  const pptx = new pptxgen();
+  pptx.defineLayout({ name: "CUSTOM_LAYOUT", width: reqWidth, height: 7.5 });
+  pptx.layout = "CUSTOM_LAYOUT";
+
+  drawOrgChartSlide(pptx, records, titleText, chartDate, reqWidth);
+
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -515,5 +557,432 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
     .replace(/\s+/g, "_");
 
   const filename = `${sanitizedProfileName}_${dateStr}_ORG_CHART.pptx`;
+  pptx.writeFile({ fileName: filename });
+}
+
+/**
+ * Exports PowerPoint bubble map org chart for multiple profiles (one profile per slide)
+ */
+export function exportMultiProfileBubbleMapToPPTX(
+  profilesData: { schemeName: string; records: ArmyRatingRecord[]; slideTitle?: string }[],
+  rosterTypeTitle: string = "Current Roster"
+) {
+  let maxRequiredWidth = 18;
+  profilesData.forEach(p => {
+    if (p.records && p.records.length > 0) {
+      const w = getRequiredSlideWidth(p.records);
+      if (w > maxRequiredWidth) maxRequiredWidth = w;
+    }
+  });
+
+  const pptx = new pptxgen();
+  pptx.defineLayout({ name: "CUSTOM_LAYOUT", width: maxRequiredWidth, height: 7.5 });
+  pptx.layout = "CUSTOM_LAYOUT";
+
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  profilesData.forEach(p => {
+    const isProjected = rosterTypeTitle.toLowerCase().includes("projected");
+    const defaultTitle = isProjected
+      ? `${p.schemeName} PROJECTED ${todayStr}`
+      : `${p.schemeName} CURRENT AS OF ${todayStr}`;
+    const slideTitle = p.slideTitle || defaultTitle;
+
+    drawOrgChartSlide(
+      pptx,
+      p.records,
+      slideTitle,
+      "",
+      maxRequiredWidth
+    );
+  });
+
+  const dateTag = new Date().toISOString().split("T")[0];
+  const sanitizedTitle = rosterTypeTitle.replace(/[^a-zA-Z0-9_-]/g, "_");
+  pptx.writeFile({ fileName: `Combined_All_Profiles_${sanitizedTitle}_Org_Charts_${dateTag}.pptx` });
+}
+
+/**
+ * Exports NCOER status monitoring report categorizations to PowerPoint slides.
+ */
+export function exportNcoerReportToPPTX(
+  allRecords: ArmyRatingRecord[],
+  records: ArmyRatingRecord[],
+  activeSchemeName: string = "ACTIVE RATING SCHEME"
+) {
+  const pptx = new pptxgen();
+  pptx.defineLayout({ name: "REPORT_16x9", width: 13.33, height: 7.5 });
+  pptx.layout = "REPORT_16x9";
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  const formatNiceDate = (dateStr: string | undefined): string => {
+    if (!dateStr) return "N/A";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return dateStr || "N/A";
+    }
+  };
+
+  const getDaysRemainingText = (thruStr: string | undefined): string => {
+    if (!thruStr) return "N/A";
+    try {
+      const thruDate = new Date(thruStr);
+      thruDate.setHours(0, 0, 0, 0);
+      const diffTime = thruDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays < 0) {
+        return `${Math.abs(diffDays)}d OVERDUE`;
+      } else if (diffDays === 0) {
+        return "DUE TODAY";
+      } else {
+        return `${diffDays}d REMAINING`;
+      }
+    } catch {
+      return "N/A";
+    }
+  };
+
+  const add90Days = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr);
+      d.setDate(d.getDate() + 90);
+      return d.toISOString().split("T")[0];
+    } catch {
+      return "";
+    }
+  };
+
+  const findCurrentRecord = (rec: ArmyRatingRecord): ArmyRatingRecord => {
+    const r = allRecords?.find(x => x.id === rec.id && (x.version || "current") === "current");
+    return r || rec;
+  };
+
+  const helperGetName = (id: string) => {
+    if (!id || id === "-") return "—";
+    const rec = (allRecords || records).find(x => x.id === id);
+    return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
+  };
+
+  const baseReportItems: { record: ArmyRatingRecord; thru: string; isLate: boolean }[] = [];
+  records.forEach(r => {
+    const currentRec = findCurrentRecord(r);
+    if (r.thru) {
+      try {
+        const thruDate = new Date(r.thru);
+        thruDate.setHours(0, 0, 0, 0);
+        const diffTime = thruDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays <= 30) {
+          baseReportItems.push({
+            record: r,
+            thru: r.thru,
+            isLate: false
+          });
+        }
+      } catch (e) {}
+    }
+    if (currentRec.priorThru) {
+      baseReportItems.push({
+        record: r,
+        thru: currentRec.priorThru,
+        isLate: true
+      });
+    }
+  });
+
+  baseReportItems.sort((a, b) => {
+    const dateA = new Date(a.thru).getTime() || 0;
+    const dateB = new Date(b.thru).getTime() || 0;
+    return dateA - dateB;
+  });
+
+  const categories = [
+    { id: "30plus_not_submitted", name: "30+ Days Past Thru (Not Submitted)" },
+    { id: "reviewing", name: "Reviewing (HR / CSM)" },
+    { id: "signatures_edits", name: "Out for Signatures / Returned for Edits" },
+    { id: "0_29_past", name: "0 to 29 Days Past Thru (Not Submitted)" },
+    { id: "late_hqda", name: "Late to HQDA" }
+  ];
+
+  function drawSlideHeaderAndFooter(slide: any, filterName: string, isContinued: boolean, rankStatsStr?: string) {
+    // Slate Banner background
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: 13.33,
+      h: 1.0,
+      fill: { color: "1E293B" }
+    });
+
+    // Gold line under banner
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 1.0,
+      w: 13.33,
+      h: 0.08,
+      fill: { color: "F59E0B" }
+    });
+
+    // Header Text - Adjusted layout to support subtext cleanly
+    slide.addText(`NCOER REPORT — ${filterName.toUpperCase()}${isContinued ? " (CONTINUED)" : ""}`, {
+      x: 0.5,
+      y: 0.1,
+      w: 8.5,
+      h: 0.5,
+      color: "FFFFFF",
+      fontSize: 13,
+      bold: true,
+      valign: "middle"
+    });
+
+    // Rank stats under header title (if provided)
+    if (rankStatsStr) {
+      slide.addText(`SECTION RANK COUNTS: ${rankStatsStr.toUpperCase()}`, {
+        x: 0.5,
+        y: 0.60,
+        w: 8.5,
+        h: 0.35,
+        color: "94A3B8", // slate-400
+        fontSize: 8,
+        bold: true,
+        valign: "top"
+      });
+    }
+
+    // Date
+    const todayStr = new Date().toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+    slide.addText(`AS OF: ${todayStr.toUpperCase()}`, {
+      x: 9.0,
+      y: 0.15,
+      w: 3.83,
+      h: 0.7,
+      color: "FBBF24",
+      fontSize: 10,
+      bold: true,
+      align: "right",
+      valign: "middle"
+    });
+
+    // Divider for footer
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0.5,
+      y: 7.0,
+      w: 12.33,
+      h: 0.02,
+      fill: { color: "E2E8F0" }
+    });
+
+    // Footer Text Left
+    slide.addText(`Active Rating Scheme: ${activeSchemeName}`, {
+      x: 0.5,
+      y: 7.05,
+      w: 6.0,
+      h: 0.3,
+      color: "64748B",
+      fontSize: 8.5,
+      valign: "middle"
+    });
+
+    // Footer Text Right
+    slide.addText("CONFIDENTIAL — FOR INTERNAL USE ONLY", {
+      x: 6.5,
+      y: 7.05,
+      w: 6.33,
+      h: 0.3,
+      color: "94A3B8",
+      fontSize: 8.5,
+      bold: true,
+      align: "right",
+      valign: "middle"
+    });
+  }
+
+  categories.forEach(cat => {
+    const filtered = baseReportItems.filter(item => {
+      const r = item.record;
+      const currentRec = findCurrentRecord(r);
+      const status = currentRec.ncoerStatus || "Not Submitted to HR";
+      
+      const thruDate = new Date(item.thru);
+      thruDate.setHours(0, 0, 0, 0);
+      const diffTime = now.getTime() - thruDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      const hqdaDueStr = item.isLate ? (currentRec.priorDueHqda || add90Days(item.thru)) : (r.dueHqda || add90Days(item.thru));
+      const hqdaDate = new Date(hqdaDueStr);
+      hqdaDate.setHours(0, 0, 0, 0);
+      const isPastHqda = now > hqdaDate;
+
+      switch (cat.id) {
+        case "30plus_not_submitted":
+          return diffDays >= 30 && status === "Not Submitted to HR";
+        case "reviewing":
+          return status.includes("Reviewing") || status.includes("BN") || status.includes("BDE");
+        case "signatures_edits":
+          return status === "Out for Signatures" || status === "Returned for Edits";
+        case "0_29_past":
+          return diffDays >= 0 && diffDays < 30 && status === "Not Submitted to HR";
+        case "late_hqda":
+          return isPastHqda && status !== "Submitted to HQDA";
+        default:
+          return true;
+      }
+    });
+
+    if (filtered.length === 0) {
+      const slide = pptx.addSlide();
+      drawSlideHeaderAndFooter(slide, cat.name, false);
+      
+      slide.addText("No records match this status category.", {
+        x: 1.0,
+        y: 3.2,
+        w: 11.33,
+        h: 1.0,
+        align: "center",
+        fontSize: 14,
+        color: "64748B",
+        bold: true
+      });
+      return;
+    }
+
+    // Calculate rank counts for this category's filtered items
+    const rankCounts: Record<string, number> = {};
+    filtered.forEach(item => {
+      const r = item.record;
+      const rk = r.rank || "Unknown";
+      rankCounts[rk] = (rankCounts[rk] || 0) + 1;
+    });
+
+    const rankOrder = ["CSM", "SGM", "1SG", "MSG", "SFC", "SSG", "SGT"];
+    const rankCountsStr = Object.entries(rankCounts)
+      .sort((a, b) => {
+        const idxA = rankOrder.indexOf(a[0]);
+        const idxB = rankOrder.indexOf(b[0]);
+        if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      })
+      .map(([rank, count]) => `${rank}: ${count}`)
+      .join("   |   ");
+
+    const getStatusCellOptions = (status: string) => {
+      const normalized = status.trim();
+      if (normalized === "Not Submitted to HR" || normalized === "Late") {
+        return { fill: "FFE4E6", color: "9F1239" }; // rose-100, rose-800
+      } else if (
+        normalized === "Submitted to HR" ||
+        normalized.startsWith("Reviewing") ||
+        normalized.includes("BN") ||
+        normalized.includes("BDE") ||
+        normalized.includes("HR") ||
+        normalized.includes("CSM")
+      ) {
+        return { fill: "DBEAFE", color: "1E40AF" }; // blue-100, blue-800
+      } else if (normalized === "Returned for Edits" || normalized === "Out for Signatures") {
+        return { fill: "FEF3C7", color: "92400E" }; // amber-100, amber-800
+      } else if (normalized === "Submitted to HQDA") {
+        return { fill: "D1FAE5", color: "065F46" }; // emerald-100, emerald-800
+      } else {
+        return { fill: "F1F5F9", color: "334155" }; // slate-100, slate-800
+      }
+    };
+
+    const chunkSize = 6;
+    for (let i = 0; i < filtered.length; i += chunkSize) {
+      const chunk = filtered.slice(i, i + chunkSize);
+      const isContinued = i > 0;
+      const slide = pptx.addSlide();
+      drawSlideHeaderAndFooter(slide, cat.name, isContinued, rankCountsStr);
+
+      const tableRows: any[] = [
+        [
+          { text: "Soldier (Rank / Name)", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 9 } },
+          { text: "Element", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 9 } },
+          { text: "Duty Title & MOSC", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 9 } },
+          { text: "Thru Date (Days)", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "center", fontSize: 9 } },
+          { text: "Rater", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 9 } },
+          { text: "Senior Rater", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 9 } },
+          { text: "NCOER Status", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "center", fontSize: 9 } },
+          { text: "HQDA Due", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "right", fontSize: 9 } }
+        ]
+      ];
+
+      chunk.forEach((item, index) => {
+        const r = item.record;
+        const currentRec = findCurrentRecord(r);
+        const thruToUse = item.thru;
+        const daysText = getDaysRemainingText(thruToUse);
+        const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+        const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : r.raterId;
+        const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : r.seniorRaterId;
+        const hqdaDueStr = isActuallyLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));
+
+        const soldierText = `${r.rank} ${r.name}`;
+        const elementText = r.element || "—";
+        const dutyText = r.keyLeaderTitle ? `${r.role}\n(${r.keyLeaderTitle})\n[MOSC: ${r.dutyMosc || "—"}]` : `${r.role}\n[MOSC: ${r.dutyMosc || "—"}]`;
+        const thruText = `${formatNiceDate(thruToUse)}\n(${daysText})`;
+        const raterText = helperGetName(raterToUse);
+        const srText = helperGetName(srToUse);
+        
+        let statusToDraw = r.ncoerStatus || "Not Submitted to HR";
+        if (item.isLate) {
+          statusToDraw = (currentRec.ncoerStatus && currentRec.ncoerStatus !== "-") ? currentRec.ncoerStatus : "Not Submitted to HR";
+        }
+
+        const hqdaText = formatNiceDate(hqdaDueStr);
+        const bgHex = index % 2 === 1 ? "F8FAFC" : "FFFFFF";
+        const statusOpts = getStatusCellOptions(statusToDraw);
+
+        tableRows.push([
+          { text: soldierText, options: { fill: bgHex, align: "left", fontSize: 8.5, bold: true, color: "1E293B" } },
+          { text: elementText, options: { fill: bgHex, align: "left", fontSize: 8, color: "475569" } },
+          { text: dutyText, options: { fill: bgHex, align: "left", fontSize: 7.5, color: "475569" } },
+          { text: thruText, options: { fill: bgHex, align: "center", fontSize: 8, color: "1E293B", bold: true } },
+          { text: raterText, options: { fill: bgHex, align: "left", fontSize: 8, color: "475569" } },
+          { text: srText, options: { fill: bgHex, align: "left", fontSize: 8, color: "475569" } },
+          { text: statusToDraw, options: { fill: statusOpts.fill, align: "center", fontSize: 8, bold: true, color: statusOpts.color } },
+          { text: hqdaText, options: { fill: bgHex, align: "right", fontSize: 8, color: "64748B" } }
+        ]);
+      });
+
+      slide.addTable(tableRows, {
+        x: 0.5,
+        y: 1.3,
+        w: 12.33,
+        colW: [2.1, 1.0, 1.9, 1.5, 1.7, 1.7, 1.4, 1.03],
+        border: { type: "solid", color: "CBD5E1", pt: 1 },
+        margin: [4, 6, 4, 6],
+        valign: "middle"
+      });
+    }
+  });
+
+  const sanitizedProfileName = activeSchemeName
+    .replace(/[^a-zA-Z0-9\s_-]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+
+  const filename = `${sanitizedProfileName}_NCOER_REPORT_${dateStr}.pptx`;
   pptx.writeFile({ fileName: filename });
 }

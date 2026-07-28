@@ -208,6 +208,20 @@ export function subscribeToSchemes(userId: string, onUpdate: (schemes: RatingSch
   });
 }
 
+export async function getRecordsForScheme(schemeId: string): Promise<ArmyRatingRecord[]> {
+  try {
+    const q = query(
+      collection(db, RECORDS_COL), 
+      where("schemeId", "==", schemeId)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => d.data() as ArmyRatingRecord);
+  } catch (error) {
+    console.error("Error fetching records for scheme", schemeId, error);
+    return [];
+  }
+}
+
 export function subscribeToRecords(
   schemeId: string, 
   onUpdate: (records: ArmyRatingRecord[]) => void, 

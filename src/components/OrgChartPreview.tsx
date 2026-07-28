@@ -18,6 +18,8 @@ interface OrgChartPreviewProps {
   selectedVersion?: "current" | "future" | "alternate";
   onChangeVersion?: (version: "current" | "future" | "alternate") => void;
   allRecords?: ArmyRatingRecord[];
+  effectiveAsOf?: string;
+  proposedDate?: string;
 }
 
 const getVerticalNameClass = (rank: string, name: string) => {
@@ -40,7 +42,9 @@ export default function OrgChartPreview({
   activeSchemeName = "Rating Scheme",
   selectedVersion = "current",
   onChangeVersion,
-  allRecords = []
+  allRecords = [],
+  effectiveAsOf,
+  proposedDate
 }: OrgChartPreviewProps) {
   const [zoom, setZoom] = useState(0.95);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -193,7 +197,16 @@ export default function OrgChartPreview({
 
   // PPTX Export trigger
   const handleExportPPTX = () => {
-    exportToPPTX(records, activeSchemeName, displayDate);
+    const isProjected = selectedVersion === "future" || selectedVersion === "alternate";
+    const dateToUse = isProjected
+      ? (proposedDate || displayDate || new Date().toISOString().split('T')[0])
+      : (effectiveAsOf || displayDate || new Date().toISOString().split('T')[0]);
+
+    const titleHeader = isProjected
+      ? `${activeSchemeName} PROJECTED ${dateToUse}`
+      : `${activeSchemeName} CURRENT AS OF ${dateToUse}`;
+
+    exportToPPTX(records, titleHeader, "");
   };
 
   // Browser Print trigger
