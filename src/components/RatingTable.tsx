@@ -1373,13 +1373,14 @@ export default function RatingTable({
       return a.name.localeCompare(b.name);
     });
 
-    const data = sortedExportRecords.map(r => {
-      const helperGetName = (id: string) => {
-        if (!id || id === "-") return "";
-        const rec = records.find(x => x.id === id);
-        return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
-      };
+    const helperGetName = (id: string) => {
+      if (!id || id === "-") return "";
+      const searchSource = allRecords || records;
+      const rec = searchSource.find(x => x.id === id);
+      return rec ? formatNameToLastFirstRank(rec.name, rec.rank) : formatNameToLastFirstRank(id);
+    };
 
+    const data = sortedExportRecords.map(r => {
       const isLate = r.ncoerStatus === "Late";
       const raterId = isLate && r.lateRaterId ? r.lateRaterId : r.raterId;
       const seniorRaterId = isLate && r.lateSeniorRaterId ? r.lateSeniorRaterId : r.seniorRaterId;
@@ -1454,6 +1455,15 @@ export default function RatingTable({
           }
         };
 
+        const isLate = r.ncoerStatus === "Late";
+        const currentIsLate = currentSoldier.ncoerStatus === "Late";
+
+        const raterId = isLate && r.lateRaterId ? r.lateRaterId : r.raterId;
+        const seniorRaterId = isLate && r.lateSeniorRaterId ? r.lateSeniorRaterId : r.seniorRaterId;
+
+        const currentRaterId = currentIsLate && currentSoldier.lateRaterId ? currentSoldier.lateRaterId : currentSoldier.raterId;
+        const currentSeniorRaterId = currentIsLate && currentSoldier.lateSeniorRaterId ? currentSoldier.lateSeniorRaterId : currentSoldier.seniorRaterId;
+
         // Compare and highlight each field:
         // A: Element
         if (r.element !== currentSoldier.element) {
@@ -1478,47 +1488,55 @@ export default function RatingTable({
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // F: From
-        if (r.from !== currentSoldier.from) {
+        if (formatDateToYYYYMMDD(r.from) !== formatDateToYYYYMMDD(currentSoldier.from)) {
           const cellRef = `F${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // G: Thru
-        if (r.thru !== currentSoldier.thru) {
+        if (formatDateToYYYYMMDD(r.thru) !== formatDateToYYYYMMDD(currentSoldier.thru)) {
           const cellRef = `G${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // H: Due to HQDA
-        if (r.dueHqda !== currentSoldier.dueHqda) {
+        const dueA = formatDateToYYYYMMDD(r.dueHqda || add90Days(r.thru));
+        const dueB = formatDateToYYYYMMDD(currentSoldier.dueHqda || add90Days(currentSoldier.thru));
+        if (dueA !== dueB) {
           const cellRef = `H${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // I: Rater
-        if (getRaterNameInVersion(r.raterId, records) !== getRaterNameInVersion(currentSoldier.raterId, currentRecords)) {
+        if (helperGetName(raterId) !== helperGetName(currentRaterId)) {
           const cellRef = `I${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // J: Rater Effective Date
-        if ((r.raterEffectiveDate || "") !== (currentSoldier.raterEffectiveDate || "")) {
+        const raterEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.raterEffectiveDate);
+        const raterEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.raterEffectiveDate);
+        if (raterEffA !== raterEffB) {
           const cellRef = `J${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // K: Senior Rater
-        if (getRaterNameInVersion(r.seniorRaterId, records) !== getRaterNameInVersion(currentSoldier.seniorRaterId, currentRecords)) {
+        if (helperGetName(seniorRaterId) !== helperGetName(currentSeniorRaterId)) {
           const cellRef = `K${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // L: Senior Rater Effective Date
-        if ((r.seniorRaterEffectiveDate || "") !== (currentSoldier.seniorRaterEffectiveDate || "")) {
+        const srEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.seniorRaterEffectiveDate);
+        const srEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.seniorRaterEffectiveDate);
+        if (srEffA !== srEffB) {
           const cellRef = `L${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // M: Reviewer
-        if (getReviewerNameInVersion(r.reviewerId, records) !== getReviewerNameInVersion(currentSoldier.reviewerId, currentRecords)) {
+        if (helperGetName(r.reviewerId) !== helperGetName(currentSoldier.reviewerId)) {
           const cellRef = `M${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
         // N: Reviewer Effective Date
-        if ((r.reviewerEffectiveDate || "") !== (currentSoldier.reviewerEffectiveDate || "")) {
+        const revEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.reviewerEffectiveDate);
+        const revEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.reviewerEffectiveDate);
+        if (revEffA !== revEffB) {
           const cellRef = `N${rowIdx}`;
           if (worksheet[cellRef]) worksheet[cellRef].s = highlightStyle;
         }
