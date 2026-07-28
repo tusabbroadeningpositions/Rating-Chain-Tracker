@@ -34,6 +34,7 @@ interface RatingTableProps {
   onUpdateProposedEffectiveDate?: (dateVal: string) => void;
   effectiveAsOf?: string;
   onUpdateEffectiveAsOf?: (dateVal: string) => void;
+  canEditCurrentRoster?: boolean;
 }
 
 const getSubmissionBadgeStyles = (subType: string) => {
@@ -65,12 +66,13 @@ export default function RatingTable({
   readOnly = false,
   selectedVersion = "current",
   onChangeVersion,
-  activeSchemeName = "Blues Rating Scheme",
+  activeSchemeName = "Sample Rating Scheme",
   proposedEffectiveDate = "",
   onPromoteVersion,
   onUpdateProposedEffectiveDate,
   effectiveAsOf = "",
   onUpdateEffectiveAsOf,
+  canEditCurrentRoster = true,
 }: RatingTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
@@ -100,6 +102,11 @@ export default function RatingTable({
   const [overwriteLateDecision, setOverwriteLateDecision] = useState<{ current: ArmyRatingRecord; projected: ArmyRatingRecord } | null>(null);
   const [overwriteDecisionView, setOverwriteDecisionView] = useState<"choice" | "late-mode">("choice");
   const [isShowingReportPreview, setIsShowingReportPreview] = useState(false);
+  
+  // Duplicate handling states
+  const [redirectDuplicates, setRedirectDuplicates] = useState(true);
+  const [projectedCopyDuplicateTarget, setProjectedCopyDuplicateTarget] = useState<ArmyRatingRecord | null>(null);
+  const [projectedCopySourceRecord, setProjectedCopySourceRecord] = useState<ArmyRatingRecord | null>(null);
   
   // Batch Promotion State
   const [batchPromoteIncomplete, setBatchPromoteIncomplete] = useState<ArmyRatingRecord[]>([]);
@@ -1561,6 +1568,156 @@ export default function RatingTable({
     XLSX.writeFile(workbook, filename);
   };
 
+  // Helper to find duplicate names in pending imports
+  const getDuplicateNames = (importedRecords: ArmyRatingRecord[]) => {
+    const counts: Record<string, number> = {};
+    const existingNames = new Set(
+      records.map(r => r.name.trim().toLowerCase())
+    );
+    const duplicates = new Set<string>();
+
+    importedRecords.forEach(r => {
+      const nameKey = r.name.trim().toLowerCase();
+      if (counts[nameKey]) {
+        duplicates.add(r.name.trim());
+      } else {
+        counts[nameKey] = 1;
+      }
+      if (existingNames.has(nameKey)) {
+        duplicates.add(r.name.trim());
+      }
+    });
+
+    return Array.from(duplicates);
+  };
+
+  // Helper to route duplicate records with later THRU date to alternate roster
+  const processImportRecords = (imported: ArmyRatingRecord[], append: boolean, redirect: boolean) => {
+    if (!redirect) return imported;
+
+    const normalizedTargetVersion = selectedVersion; // e.g., "current", "future", "alternate"
+    const targetRoster = append ? records : [];
+
+    // Group both imported and target records by normalized name
+    const groups: Record<string, ArmyRatingRecord[]> = {};
+
+    const addToGroup = (rec: ArmyRatingRecord, source: 'target' | 'imported') => {
+      const nameKey = rec.name.trim().toLowerCase();
+      if (!groups[nameKey]) {
+        groups[nameKey] = [];
+      }
+      groups[nameKey].push({ ...rec, _source: source } as any);
+    };
+
+    targetRoster.forEach(r => addToGroup(r, 'target'));
+    imported.forEach(r => addToGroup(r, 'imported'));
+
+    const processedImported: ArmyRatingRecord[] = [];
+
+    Object.keys(groups).forEach(nameKey => {
+      const list = groups[nameKey];
+      if (list.length <= 1) {
+        const item = list[0];
+        if ((item as any)._source === 'imported') {
+          delete (item as any)._source;
+          processedImported.push(item);
+        }
+        return;
+      }
+
+      // Sort by THRU date ascending
+      const parseDate = (dStr: string) => {
+        if (!dStr) return 0;
+        const d = new Date(dStr);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+      };
+
+      list.sort((a, b) => parseDate(a.thru) - parseDate(b.thru));
+
+      let keptEarliest = false;
+      
+      list.forEach((item) => {
+        if ((item as any)._source === 'target') {
+          keptEarliest = true;
+          return;
+        }
+
+        const copy = { ...item };
+        delete (copy as any)._source;
+
+        if (!keptEarliest) {
+          copy.version = normalizedTargetVersion;
+          keptEarliest = true;
+        } else {
+          copy.version = "alternate";
+        }
+        processedImported.push(copy);
+      });
+    });
+
+    return processedImported;
+  };
+
+  // Handles copying a record from Alternate roster to Projected roster
+  const handleCopyToProjected = (source: ArmyRatingRecord) => {
+    // Search the projected roster for a record with the same name (case insensitive)
+    const projectedRoster = (allRecords || []).filter(r => r.version === "future");
+    const existing = projectedRoster.find(
+      r => r.name.trim().toLowerCase() === source.name.trim().toLowerCase()
+    );
+
+    if (existing) {
+      setProjectedCopySourceRecord(source);
+      setProjectedCopyDuplicateTarget(existing);
+    } else {
+      executeCopyToProjected(source, null, false);
+    }
+  };
+
+  const executeCopyToProjected = (source: ArmyRatingRecord, targetToOverwrite: ArmyRatingRecord | null, addAsDuplicate: boolean) => {
+    if (targetToOverwrite && !addAsDuplicate) {
+      // Overwrite the existing projected record with the source fields, but keep its ID to preserve history
+      const updatedRecord = {
+        ...targetToOverwrite,
+        rank: source.rank,
+        element: source.element,
+        dutyMosc: source.dutyMosc,
+        role: source.role,
+        keyLeaderTitle: source.keyLeaderTitle,
+        from: source.from,
+        thru: source.thru,
+        dueHqda: source.dueHqda,
+        raterId: source.raterId,
+        raterEffectiveDate: source.raterEffectiveDate,
+        seniorRaterId: source.seniorRaterId,
+        seniorRaterEffectiveDate: source.seniorRaterEffectiveDate,
+        reviewerId: source.reviewerId,
+        reviewerEffectiveDate: source.reviewerEffectiveDate,
+        submissionType: source.submissionType,
+        corNewRaterId: source.corNewRaterId,
+        corEffectiveDate: source.corEffectiveDate,
+        ncoerStatus: source.ncoerStatus,
+        isCustomStatus: source.isCustomStatus,
+        ncoerStatusDate: source.ncoerStatusDate,
+        priorThru: source.priorThru,
+        priorDueHqda: source.priorDueHqda
+      };
+      onUpdateRecord(updatedRecord);
+    } else {
+      // Create a copy in the projected roster
+      const newId = `projected_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+      const copiedRecord = {
+        ...source,
+        id: newId,
+        version: "future" as const
+      };
+      onUpdateRecord(copiedRecord);
+    }
+    // Clear state
+    setProjectedCopySourceRecord(null);
+    setProjectedCopyDuplicateTarget(null);
+  };
+
   // Process uploaded CSV file
   const processCSVFile = (file: File) => {
     setCsvError("");
@@ -2576,8 +2733,9 @@ export default function RatingTable({
                         <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-slate-700">
                           <button
                             onClick={handlePromoteVersionClick}
-                            disabled={readOnly}
+                            disabled={readOnly || !canEditCurrentRoster}
                             className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={!canEditCurrentRoster ? "Only the logged in owner can modify the current roster" : "Set this version as the Current Version"}
                           >
                             <CheckCircle2 className="w-3 h-3" />
                             Set as Current Version
@@ -2724,6 +2882,16 @@ export default function RatingTable({
                               <History className="w-2.5 h-2.5" />
                               {selectedVersion === "current" ? "Projected / History" : "View Current"}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+                            </button>
+                          )}
+                          {selectedVersion === "alternate" && !readOnly && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCopyToProjected(r); }}
+                              className="mt-1.5 flex items-center justify-center gap-1.5 px-2 py-1 rounded text-[8px] uppercase font-black tracking-wider transition-all w-fit whitespace-nowrap bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm active:scale-95 animate-fade-in"
+                              title="Copy this soldier's record to the Projected (Future) roster"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              Copy to Projected Roster
                             </button>
                           )}
                         </div>
@@ -3550,10 +3718,40 @@ export default function RatingTable({
               </div>
             </div>
 
+            {selectedVersion !== "alternate" && (() => {
+              const duplicatesList = getDuplicateNames(importPending);
+              if (duplicatesList.length === 0) return null;
+              return (
+                <div className="mx-5 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex flex-col gap-2 animate-fade-in">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-[11px] font-bold text-amber-950 uppercase tracking-tight">Duplicate Names Detected</h4>
+                      <p className="text-[10px] text-amber-800 font-medium leading-relaxed mt-0.5">
+                        We found duplicate entries for: <span className="font-bold">{duplicatesList.join(", ")}</span>.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer mt-1 select-none">
+                    <input
+                      type="checkbox"
+                      checked={redirectDuplicates}
+                      onChange={(e) => setRedirectDuplicates(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-[11px] font-bold text-slate-700 leading-tight">
+                      Put duplicate names with later THRU dates into "Alternate" roster
+                    </span>
+                  </label>
+                </div>
+              );
+            })()}
+
             <div className="bg-slate-50 border-t border-slate-100 p-4 flex flex-col gap-2">
               <button
                 onClick={() => {
-                  onImportCSV(importPending, true);
+                  const processed = processImportRecords(importPending, true, redirectDuplicates);
+                  onImportCSV(processed, true);
                   setImportPending(null);
                 }}
                 className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
@@ -3565,7 +3763,8 @@ export default function RatingTable({
               
               <button
                 onClick={() => {
-                  onImportCSV(importPending, false);
+                  const processed = processImportRecords(importPending, false, redirectDuplicates);
+                  onImportCSV(processed, false);
                   setImportPending(null);
                 }}
                 className="w-full px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
@@ -3581,6 +3780,77 @@ export default function RatingTable({
                 id="btn-import-cancel"
               >
                 CANCEL IMPORT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {projectedCopyDuplicateTarget && (
+        <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[250] animate-fade-in print:hidden">
+          <div className="bg-white border-2 border-slate-300 rounded shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
+            {/* Header */}
+            <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-500 text-xs">★</span>
+                <span className="text-xs font-bold uppercase tracking-wider font-mono">
+                  Projected Duplicate Check
+                </span>
+              </div>
+              <button 
+                onClick={() => {
+                  setProjectedCopySourceRecord(null);
+                  setProjectedCopyDuplicateTarget(null);
+                }}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content body */}
+            <div className="p-5 flex items-start gap-4">
+              <div className="p-2 bg-slate-50 rounded border border-slate-100 shrink-0">
+                <AlertCircle className="w-6 h-6 text-amber-500 animate-pulse" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-bold text-slate-900 text-sm uppercase tracking-tight">
+                  Soldier already in Projected Roster
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                  A record for <strong className="text-slate-800 font-bold">{projectedCopyDuplicateTarget.name}</strong> already exists in the <strong className="text-blue-600 font-bold">Projected (Future)</strong> roster.
+                </p>
+                <p className="text-[11px] text-slate-400 font-medium leading-relaxed">
+                  Would you like to overwrite the existing projected record with the alternate record, or add it as a duplicate?
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="bg-slate-50 border-t border-slate-100 px-4 py-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectedCopySourceRecord(null);
+                  setProjectedCopyDuplicateTarget(null);
+                }}
+                className="px-3.5 py-1.5 border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded text-xs font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-slate-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeCopyToProjected(projectedCopySourceRecord!, null, true)}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Add as Duplicate
+              </button>
+              <button
+                type="button"
+                onClick={() => executeCopyToProjected(projectedCopySourceRecord!, projectedCopyDuplicateTarget!, false)}
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-amber-500"
+              >
+                Overwrite Existing
               </button>
             </div>
           </div>

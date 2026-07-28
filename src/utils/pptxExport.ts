@@ -789,23 +789,10 @@ export function exportNcoerReportToPPTX(
     slide.addText(`Active Rating Scheme: ${activeSchemeName}`, {
       x: 0.5,
       y: 7.05,
-      w: 6.0,
+      w: 12.33,
       h: 0.3,
       color: "64748B",
       fontSize: 8.5,
-      valign: "middle"
-    });
-
-    // Footer Text Right
-    slide.addText("CONFIDENTIAL — FOR INTERNAL USE ONLY", {
-      x: 6.5,
-      y: 7.05,
-      w: 6.33,
-      h: 0.3,
-      color: "94A3B8",
-      fontSize: 8.5,
-      bold: true,
-      align: "right",
       valign: "middle"
     });
   }
@@ -840,6 +827,26 @@ export function exportNcoerReportToPPTX(
         default:
           return true;
       }
+    });
+
+    // Sort filtered records: alphabetically by element first, then by alphabetical last name.
+    filtered.sort((a, b) => {
+      const elemA = (a.record.element || "").trim().toLowerCase();
+      const elemB = (b.record.element || "").trim().toLowerCase();
+      if (elemA !== elemB) {
+        return elemA.localeCompare(elemB);
+      }
+      
+      const formattedA = formatNameToLastFirstRank(a.record.name);
+      const lastNameA = formattedA.split(",")[0].trim().toLowerCase();
+      
+      const formattedB = formatNameToLastFirstRank(b.record.name);
+      const lastNameB = formattedB.split(",")[0].trim().toLowerCase();
+      
+      if (lastNameA !== lastNameB) {
+        return lastNameA.localeCompare(lastNameB);
+      }
+      return formattedA.localeCompare(formattedB);
     });
 
     if (filtered.length === 0) {

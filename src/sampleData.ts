@@ -5,310 +5,222 @@
 
 import { ArmyRatingRecord, RatingRole } from "./types";
 
-export const INITIAL_RECORDS: ArmyRatingRecord[] = [
-  // 1. OIC / CMD / Leadership
-  {
-    id: "2",
+const FAKE_NAMES = [
+  "Smith, James", "Johnson, Robert", "Williams, Mary", "Brown, Patricia", "Jones, Jennifer",
+  "Garcia, Linda", "Miller, Barbara", "Davis, Elizabeth", "Rodriguez, Susan", "Martinez, Jessica",
+  "Hernandez, Sarah", "Lopez, Karen", "Gonzalez, Nancy", "Wilson, Lisa", "Anderson, Betty",
+  "Thomas, Margaret", "Taylor, Sandra", "Moore, Ashley", "Jackson, Kimberly", "Martin, Donna"
+];
+
+const LAST_NAMES = [
+  "Abbott", "Baker", "Carter", "Davis", "Evans", "Foster", "Garcia", "Harris", "Irwin", "Jackson",
+  "Kelly", "Lopez", "Miller", "Nelson", "Owens", "Perez", "Quinn", "Ross", "Smith", "Taylor"
+];
+
+const FIRST_NAMES = [
+  "Adam", "Brian", "Chris", "David", "Eric", "Frank", "George", "Henry", "Isaac", "James",
+  "Kevin", "Liam", "Mark", "Noah", "Owen", "Paul", "Quinn", "Ryan", "Steve", "Thomas"
+];
+
+function getRandomName() {
+  const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  return `${last}, ${first}`;
+}
+
+function getRandomStatus() {
+  const statuses = ["", "Not Submitted to HR", "Submitted to HR", "Reviewing - HR", "Reviewing - CSM", "Returned for Edits", "Out for Signatures", "Submitted to HQDA", "Late"];
+  return statuses[Math.floor(Math.random() * statuses.length)];
+}
+
+function getRandomLateStatus() {
+  // These should be from the dropdown, but typically late ones might be in these stages
+  const statuses = ["Late", "Reviewing - HR", "Reviewing - CSM", "Returned for Edits", "Out for Signatures"];
+  return statuses[Math.floor(Math.random() * statuses.length)];
+}
+
+export function generateSampleRecords(): ArmyRatingRecord[] {
+  const records: ArmyRatingRecord[] = [];
+  const today = new Date();
+  
+  const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
+  const generateDates = (isLate: boolean, isUpcoming: boolean) => {
+    const fromDate = new Date(today);
+    fromDate.setFullYear(today.getFullYear() - 1);
+    
+    const thruDate = new Date(fromDate);
+    thruDate.setFullYear(fromDate.getFullYear() + 1);
+    thruDate.setDate(thruDate.getDate() - 1);
+
+    if (isLate) {
+      // thru date was in the past (e.g., 10-60 days ago)
+      const offset = Math.floor(Math.random() * 50) + 10;
+      thruDate.setDate(today.getDate() - offset);
+      fromDate.setFullYear(thruDate.getFullYear() - 1);
+      fromDate.setDate(thruDate.getDate() + 1);
+    } else if (isUpcoming) {
+      // thru date is in the next 30 days
+      const offset = Math.floor(Math.random() * 25);
+      thruDate.setDate(today.getDate() + offset);
+      fromDate.setFullYear(thruDate.getFullYear() - 1);
+      fromDate.setDate(thruDate.getDate() + 1);
+    } else {
+      // normal thru date (e.g., 6 months from now)
+      const offset = Math.floor(Math.random() * 180) + 30;
+      thruDate.setDate(today.getDate() + offset);
+      fromDate.setFullYear(thruDate.getFullYear() - 1);
+      fromDate.setDate(thruDate.getDate() + 1);
+    }
+
+    const dueHqda = new Date(thruDate);
+    dueHqda.setDate(thruDate.getDate() + 90);
+
+    return {
+      from: formatDate(fromDate),
+      thru: formatDate(thruDate),
+      dueHqda: formatDate(dueHqda)
+    };
+  };
+
+  // 1. OIC
+  const oic: ArmyRatingRecord = {
+    id: "oic-1",
     element: "CMD",
     dutyMosc: "420C",
     rank: "CW3",
-    name: "Becker, Michael",
+    name: getRandomName(),
     from: "",
     thru: "",
     dueHqda: "",
     raterId: "",
     seniorRaterId: "",
     reviewerId: "",
-    role: RatingRole.OIC
-  },
+    role: RatingRole.OIC,
+    ncoerStatus: "Submitted to HQDA"
+  };
+  records.push(oic);
 
   // 2. Element Leader
-  {
-    id: "3",
-    element: "Popular",
+  const datesEL = generateDates(false, false);
+  const el: ArmyRatingRecord = {
+    id: "el-1",
+    element: "Main Element",
     dutyMosc: "42S6O",
     rank: "SGM",
-    name: "Leader, Chad",
-    from: "2026-06-30",
-    thru: "2027-06-29",
-    dueHqda: "2026-09-27",
-    raterId: "2", // CW3 Becker, Michael
+    name: getRandomName(),
+    ...datesEL,
+    raterId: oic.id,
     seniorRaterId: "",
     reviewerId: "",
-    role: RatingRole.ELEMENT_LEADER
-  },
+    role: RatingRole.ELEMENT_LEADER,
+    ncoerStatus: "Submitted to HQDA"
+  };
+  records.push(el);
 
-  // 3. Group Leader
-  {
-    id: "4",
-    element: "Popular",
-    dutyMosc: "42S6O",
-    rank: "SGM",
-    name: "Brough, Regan",
-    from: "2025-08-11",
-    thru: "2026-08-10",
-    dueHqda: "2026-11-08",
-    raterId: "3", // SGM Leader, Chad
-    seniorRaterId: "2", // CW3 Becker, Michael
-    reviewerId: "",
-    role: RatingRole.GROUP_LEADER
-  },
-
-  // 4. Section Leaders (level below Group Leader)
-  {
-    id: "5",
-    element: "Popular",
-    dutyMosc: "42S5O",
-    rank: "MSG",
-    name: "Brimhall, Luke",
-    from: "2026-06-01",
-    thru: "2027-05-31",
-    dueHqda: "2027-08-29",
-    raterId: "4", // SGM Brough, Regan
-    seniorRaterId: "3", // SGM Leader, Chad
-    reviewerId: "",
-    role: RatingRole.SECTION_LEADER
-  },
-  {
-    id: "6",
-    element: "Popular",
-    dutyMosc: "42S5O",
-    rank: "MSG",
-    name: "Perez, Xavier",
-    from: "2025-06-01",
-    thru: "2026-05-31",
-    dueHqda: "2026-08-29",
-    raterId: "4", // SGM Brough, Regan
-    seniorRaterId: "3", // SGM Leader, Chad
-    reviewerId: "",
-    role: RatingRole.SECTION_LEADER
-  },
-  {
-    id: "7",
-    element: "Popular",
-    dutyMosc: "42S5O",
-    rank: "SFC",
-    name: "Burbank, Christopher",
-    from: "2025-08-11",
-    thru: "2026-08-10",
-    dueHqda: "2026-11-08",
-    raterId: "5", // MSG Brimhall, Luke
-    seniorRaterId: "3", // SGM Leader, Chad
-    reviewerId: "",
-    role: RatingRole.SECTION_LEADER
-  },
-  {
-    id: "8",
-    element: "Popular",
-    dutyMosc: "42S5O",
-    rank: "SSG",
-    name: "Pers, Eric",
-    from: "2026-04-01",
-    thru: "2027-03-31",
-    dueHqda: "2027-06-29",
-    raterId: "6", // MSG Perez, Xavier
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.SECTION_LEADER
-  },
-
-  // 5. Senior Musicians (level below Section Leader, acts as intermediate/raters)
-  {
-    id: "9",
-    element: "Popular",
-    dutyMosc: "42S4O",
-    rank: "SFC",
-    name: "Knutson, Jan",
-    from: "2026-03-01",
-    thru: "2027-02-28",
-    dueHqda: "2027-05-29",
-    raterId: "5", // MSG Brimhall, Luke
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.SENIOR_MUSICIAN
-  },
-  {
-    id: "10",
-    element: "Popular",
-    dutyMosc: "42S4O",
-    rank: "SFC",
-    name: "Collins, James",
-    from: "2025-10-25",
-    thru: "2026-10-24",
-    dueHqda: "2027-01-22",
-    raterId: "6", // MSG Perez, Xavier
-    seniorRaterId: "3", // SGM Leader, Chad
-    reviewerId: "",
-    role: RatingRole.SENIOR_MUSICIAN
-  },
-  {
-    id: "11",
-    element: "Popular",
-    dutyMosc: "42S4O",
-    rank: "SFC",
-    name: "Mollick, Dustin",
-    from: "2026-06-01",
-    thru: "2027-05-31",
-    dueHqda: "2027-08-29",
-    raterId: "6", // MSG Perez, Xavier
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.SENIOR_MUSICIAN
-  },
-
-  // 6. Musicians
-  {
-    id: "12",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Pritchard, Clayton",
-    from: "2025-07-01",
-    thru: "2026-06-30",
-    dueHqda: "2026-09-28",
-    raterId: "10", // SFC Collins, James
-    seniorRaterId: "6", // MSG Perez, Xavier
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "13",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Thaller, Richard",
-    from: "2026-03-22",
-    thru: "2027-03-21",
-    dueHqda: "2027-06-19",
-    raterId: "7", // SFC Burbank, Christopher
-    seniorRaterId: "5", // MSG Brimhall, Luke
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "14",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Kraft, Jacob",
-    from: "2026-06-01",
-    thru: "2027-05-31",
-    dueHqda: "2027-08-29",
-    raterId: "7", // SFC Burbank, Christopher
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "15",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Dickinson, Daniel",
-    from: "2025-08-01",
-    thru: "2026-07-31",
-    dueHqda: "2026-10-29",
-    raterId: "11", // SFC Mollick, Dustin
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "16",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Rodriguez, Melinda",
-    from: "2026-04-01",
-    thru: "2027-03-31",
-    dueHqda: "2027-06-29",
-    raterId: "8", // SSG Pers, Eric
-    seniorRaterId: "6", // MSG Perez, Xavier
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "17",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Aldred, Alexander",
-    from: "2025-08-11",
-    thru: "2026-08-10",
-    dueHqda: "2026-11-08",
-    raterId: "7", // SFC Burbank, Christopher
-    seniorRaterId: "5", // MSG Brimhall, Luke
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "18",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Eckert, Aaron",
-    from: "2025-07-01",
-    thru: "2026-06-30",
-    dueHqda: "2026-09-28",
-    raterId: "10", // SFC Collins, James
-    seniorRaterId: "6", // MSG Perez, Xavier
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "19",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Hocker, Noah",
-    from: "2026-03-01",
-    thru: "2027-02-28",
-    dueHqda: "2027-05-29",
-    raterId: "9", // SFC Knutson, Jan
-    seniorRaterId: "5", // MSG Brimhall, Luke
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "20",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Kauffman, Joshua",
-    from: "2025-12-01",
-    thru: "2026-11-30",
-    dueHqda: "2027-02-28",
-    raterId: "7", // SFC Burbank, Christopher
-    seniorRaterId: "5", // MSG Brimhall, Luke
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "21",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Andrews, Daniel",
-    from: "2025-01-01",
-    thru: "2026-12-31",
-    dueHqda: "2027-03-31",
-    raterId: "11", // SFC Mollick, Dustin
-    seniorRaterId: "4", // SGM Brough, Regan
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
-  },
-  {
-    id: "22",
-    element: "Popular",
-    dutyMosc: "42S3O",
-    rank: "SSG",
-    name: "Nero, Javier",
-    from: "2026-06-01",
-    thru: "2027-05-31",
-    dueHqda: "2027-08-29",
-    raterId: "11", // SFC Mollick, Dustin
-    seniorRaterId: "6", // MSG Perez, Xavier
-    reviewerId: "",
-    role: RatingRole.MUSICIAN
+  // 3. Group Leaders (2)
+  const groupLeaders: ArmyRatingRecord[] = [];
+  for (let i = 1; i <= 2; i++) {
+    const dates = generateDates(Math.random() > 0.8, Math.random() > 0.8);
+    const gl: ArmyRatingRecord = {
+      id: `gl-${i}`,
+      element: "Main Element",
+      dutyMosc: "42S5O",
+      rank: "MSG",
+      name: getRandomName(),
+      ...dates,
+      raterId: el.id,
+      seniorRaterId: oic.id,
+      reviewerId: "",
+      role: RatingRole.GROUP_LEADER,
+      ncoerStatus: (new Date(dates.thru) < today) ? getRandomLateStatus() : "Draft"
+    };
+    groupLeaders.push(gl);
+    records.push(gl);
   }
-];
+
+  // 4. Section Leaders (4)
+  const sectionLeaders: ArmyRatingRecord[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const parentGl = groupLeaders[Math.floor((i - 1) / 2)];
+    const dates = generateDates(Math.random() > 0.7, Math.random() > 0.7);
+    const sl: ArmyRatingRecord = {
+      id: `sl-${i}`,
+      element: i <= 2 ? "Alpha Section" : "Bravo Section",
+      dutyMosc: "42S4O",
+      rank: "SFC",
+      name: getRandomName(),
+      ...dates,
+      raterId: parentGl.id,
+      seniorRaterId: el.id,
+      reviewerId: "",
+      role: RatingRole.SECTION_LEADER,
+      ncoerStatus: (new Date(dates.thru) < today) ? getRandomLateStatus() : "Draft"
+    };
+    sectionLeaders.push(sl);
+    records.push(sl);
+  }
+
+  // 5. Senior Musicians (4 - "a few")
+  const seniorMusicians: ArmyRatingRecord[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const parentSl = sectionLeaders[i - 1];
+    const dates = generateDates(Math.random() > 0.6, Math.random() > 0.6);
+    const sm: ArmyRatingRecord = {
+      id: `sm-${i}`,
+      element: parentSl.element,
+      dutyMosc: "42S3O",
+      rank: "SSG",
+      name: getRandomName(),
+      ...dates,
+      raterId: parentSl.id,
+      seniorRaterId: parentSl.raterId, // The Group Leader
+      reviewerId: "",
+      role: RatingRole.SENIOR_MUSICIAN,
+      ncoerStatus: (new Date(dates.thru) < today) ? getRandomLateStatus() : "Draft"
+    };
+    seniorMusicians.push(sm);
+    records.push(sm);
+  }
+
+  // 6. Musicians (8 - "a bunch")
+  // Total so far: 1 + 1 + 2 + 4 + 4 = 12. Need 8 more to reach 20.
+  for (let i = 1; i <= 8; i++) {
+    // Spread them across section leaders or senior musicians
+    let parentRaterId = "";
+    let parentSrId = "";
+    let element = "";
+
+    if (i <= 4) {
+      const parentSm = seniorMusicians[i - 1];
+      parentRaterId = parentSm.id;
+      parentSrId = parentSm.raterId;
+      element = parentSm.element;
+    } else {
+      const parentSl = sectionLeaders[i - 5];
+      parentRaterId = parentSl.id;
+      parentSrId = parentSl.raterId;
+      element = parentSl.element;
+    }
+
+    const dates = generateDates(Math.random() > 0.5, Math.random() > 0.5);
+    const m: ArmyRatingRecord = {
+      id: `m-${i}`,
+      element: element,
+      dutyMosc: "42S2O",
+      rank: "SGT",
+      name: getRandomName(),
+      ...dates,
+      raterId: parentRaterId,
+      seniorRaterId: parentSrId,
+      reviewerId: "",
+      role: RatingRole.MUSICIAN,
+      ncoerStatus: (new Date(dates.thru) < today) ? getRandomLateStatus() : "Draft"
+    };
+    records.push(m);
+  }
+
+  return records;
+}
+
+export const INITIAL_RECORDS = generateSampleRecords();

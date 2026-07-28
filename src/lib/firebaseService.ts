@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { ArmyRatingRecord, RatingScheme } from "../types";
-import { INITIAL_RECORDS } from "../sampleData";
+import { INITIAL_RECORDS, generateSampleRecords } from "../sampleData";
 
 export const SCHEMES_COL = "schemes";
 export const RECORDS_COL = "records";
@@ -183,7 +183,11 @@ export async function getScheme(schemeId: string): Promise<RatingScheme | null> 
       createdAt: d.data().createdAt?.toMillis?.() || Date.now(),
       updatedAt: d.data().updatedAt?.toMillis?.() || Date.now()
     } as RatingScheme;
-  } catch (error) {
+  } catch (error: any) {
+    // Silently return null for permission errors - common when checking shared links or logged out
+    if (error.code === 'permission-denied' || error.message?.includes('permissions')) {
+      return null;
+    }
     handleFirestoreError(error, OperationType.GET, path);
   }
 }
@@ -467,7 +471,7 @@ export async function createDefaultScheme(userId: string): Promise<string> {
 
   const newScheme = {
     id: newSchemeId,
-    name: "Blues Rating Scheme",
+    name: "Sample Rating Scheme",
     userId,
     isShared: false,
     allowEdit: false,
@@ -480,13 +484,14 @@ export async function createDefaultScheme(userId: string): Promise<string> {
     await setDoc(schemeRef, newScheme);
 
     // Map old record ID to new record ID to prevent collisions across multiple users
+    const freshRecords = generateSampleRecords();
     const idMap: { [oldId: string]: string } = {};
-    INITIAL_RECORDS.forEach(r => {
+    freshRecords.forEach(r => {
       idMap[r.id] = doc(collection(db, RECORDS_COL)).id;
     });
 
     const batch = writeBatch(db);
-    INITIAL_RECORDS.forEach(record => {
+    freshRecords.forEach(record => {
       const newId = idMap[record.id];
       if (!newId) return;
 

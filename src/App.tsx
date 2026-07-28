@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { ArmyRatingRecord, RatingRole, RatingScheme, formatNameToLastFirstRank } from "./types";
-import { INITIAL_RECORDS } from "./sampleData";
+import { INITIAL_RECORDS, generateSampleRecords } from "./sampleData";
 import RatingForm from "./components/RatingForm";
 import RatingTable from "./components/RatingTable";
 import OrgChartPreview from "./components/OrgChartPreview";
@@ -129,18 +129,23 @@ export default function App() {
         try {
           const parsed = JSON.parse(saved) as ArmyRatingRecord[];
           // If it contains the old default data, reset it to the new INITIAL_RECORDS
-          const hasOldData = parsed.some(r => r.name === "Morris, Patrick" || r.name === "Cadle, David" || r.name === "Smith, John" || r.name === "Morris, Aaron");
+          const hasOldData = parsed.some(r => [
+            "Morris, Patrick", "Cadle, David", "Smith, John", "Morris, Aaron", 
+            "Becker, Michael", "Leader, Chad", "Brough, Regan", "Brimhall, Luke",
+            "Perez, Xavier", "Burbank, Christopher", "Pers, Eric"
+          ].includes(r.name));
           if (hasOldData) {
-            setRecords(INITIAL_RECORDS);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_RECORDS));
+            const freshRecords = generateSampleRecords();
+            setRecords(freshRecords);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(freshRecords));
           } else {
             setRecords(parsed);
           }
         } catch (e) {
-          setRecords(INITIAL_RECORDS);
+          setRecords(generateSampleRecords());
         }
       } else {
-        setRecords(INITIAL_RECORDS);
+        setRecords(generateSampleRecords());
       }
     }
   }, [activeSchemeId, authChecked]);
@@ -218,7 +223,7 @@ export default function App() {
         }
         setIsLoading(false);
       } else {
-        // No schemes exist for this user. Create the default "Blues Rating Scheme"
+        // No schemes exist for this user. Create the default "Sample Rating Scheme"
         setIsLoading(true);
         try {
           const defaultSchemeId = await createDefaultScheme(user.uid);
@@ -271,6 +276,19 @@ export default function App() {
   const isOwner = currentScheme?.userId === user?.uid;
   const isAnonymous = user?.isAnonymous || !user;
   const isSharedView = !!sharedScheme;
+
+  // Helper to determine if a specific version is editable
+  const canEditVersion = (version: "current" | "future" | "alternate") => {
+    if (!activeSchemeId) return true; // Guest mode - local storage only is always editable
+    if (isOwner) return true; // Owner can edit all versions
+    if (currentScheme?.isShared && currentScheme?.allowEdit) {
+      // Shared link editors can only edit future and alternate rosters
+      return version === "future" || version === "alternate";
+    }
+    return false;
+  };
+
+  const canEditCurrentVersion = canEditVersion(selectedVersion);
   const canEdit = !activeSchemeId || isOwner || !!(currentScheme?.isShared && currentScheme?.allowEdit);
 
   const handleCopyVersion = async (
@@ -279,7 +297,7 @@ export default function App() {
   ) => {
     const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
     
-    if (activeSchemeId && canEdit) {
+    if (activeSchemeId && canEditVersion(toVer)) {
       setIsLoading(true);
       try {
         await copyVersion(currentScheme?.userId || user?.uid || "guest", activeSchemeId, fromVer, toVer);
@@ -331,7 +349,7 @@ export default function App() {
     
     const recordWithVersion = {
       ...record,
-      version: editingRecord ? (editingRecord.version || "current") : selectedVersion
+      version: record.version || (editingRecord ? (editingRecord.version || "current") : selectedVersion)
     };
 
     if (!bypassCheck) {
@@ -357,7 +375,7 @@ export default function App() {
       }
     }
     
-    if (activeSchemeId && canEdit) {
+    if (activeSchemeId && canEditVersion(recordWithVersion.version || "current")) {
       if (recordWithVersion.isHistoryEntry && recordWithVersion.parentRecordId) {
         // This is a history entry (e.g. Projected version being edited from history)
         await updateHistoryRecord(recordWithVersion.parentRecordId, recordWithVersion.id, recordWithVersion);
@@ -445,7 +463,7 @@ export default function App() {
         seniorRaterEffectiveDate: pendingEffectiveDate
       }));
 
-      if (activeSchemeId && canEdit) {
+      if (activeSchemeId && canEditVersion(recordWithVersion.version || "current")) {
         const recordsToSave = [recordWithVersion, ...updatedRateesList];
         await batchSaveRecords(recordsToSave, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
       } else if (!activeSchemeId) {
@@ -459,7 +477,7 @@ export default function App() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       }
     } else {
-      if (activeSchemeId && canEdit) {
+      if (activeSchemeId && canEditVersion(recordWithVersion.version || "current")) {
         await saveRecord(recordWithVersion, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
       } else if (!activeSchemeId) {
         const exists = records.some(r => r.id === record.id);
@@ -505,7 +523,7 @@ export default function App() {
           }));
           setRecords(cleaned);
 
-          if (activeSchemeId && canEdit) {
+          if (activeSchemeId && canEditVersion(recordToDelete?.version || "current")) {
             // In Firebase, use the atomic atomic operation
             await deleteRecordAndCleanLinks(
               id, 
@@ -530,10 +548,10 @@ export default function App() {
     
     const newRecordsWithVersion = newRecords.map(r => ({
       ...r,
-      version: selectedVersion
-    }));
+      version: r.version || selectedVersion
+    })).filter(r => canEditVersion(r.version || "current"));
 
-    if (activeSchemeId && canEdit) {
+    if (activeSchemeId && canEditVersion(selectedVersion)) {
       if (append) {
         await batchSaveRecords(newRecordsWithVersion, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
       } else {
@@ -577,7 +595,7 @@ export default function App() {
   };
 
   const handleUpdateEffectiveAsOf = async (dateVal: string) => {
-    if (!activeSchemeId || !canEdit) return;
+    if (!activeSchemeId || !canEditVersion("current")) return;
     try {
       await updateSchemeDates(activeSchemeId, { effectiveAsOf: dateVal });
     } catch (error) {
@@ -586,7 +604,7 @@ export default function App() {
   };
 
   const handleUpdateProposedEffectiveDate = async (version: "future" | "alternate", dateVal: string) => {
-    if (!activeSchemeId || !canEdit) return;
+    if (!activeSchemeId || !canEditVersion(version)) return;
     try {
       if (version === "future") {
         await updateSchemeDates(activeSchemeId, { proposedEffectiveDateFuture: dateVal });
@@ -832,18 +850,26 @@ export default function App() {
                   to this live shared rating scheme.
                 </>
               ) : (
-                <>Viewing <strong className="font-bold">Blues Rating Scheme</strong> in <strong className="font-bold">Guest Mode</strong>. Data is stored only on this browser. Sign in to save across devices.</>
+                <>Viewing <strong className="font-bold">Sample Rating Scheme</strong> in <strong className="font-bold">Guest Mode</strong>. Data is stored only on this browser. Sign in to save across devices.</>
               )}
             </div>
             {isAnonymous && (
               <button 
                 onClick={() => {
-                  const btn = (document.getElementById("login-button") || 
-                               Array.from(document.querySelectorAll('button')).find(b => 
-                                 b.textContent?.toUpperCase().includes("LOG IN") || 
-                                 b.textContent?.toUpperCase().includes("SIGN IN")
-                               )) as HTMLButtonElement;
-                  btn?.click();
+                  const triggers = Array.from(document.querySelectorAll('.main-login-trigger')) as HTMLButtonElement[];
+                  const visibleTrigger = triggers.find(t => t.offsetParent !== null);
+                  if (visibleTrigger) {
+                    visibleTrigger.click();
+                  } else {
+                    // Fallback search
+                    const btn = Array.from(document.querySelectorAll('button')).find(b => 
+                      b !== document.activeElement && 
+                      (b.textContent?.toUpperCase().includes("LOG IN") || 
+                       b.textContent?.toUpperCase().includes("SIGN IN")) &&
+                      !b.textContent?.includes("Create Your Own")
+                    ) as HTMLButtonElement;
+                    btn?.click();
+                  }
                 }}
                 className={`text-xs font-bold ${sharedScheme ? "text-emerald-400 hover:text-emerald-300" : "text-amber-900 hover:text-amber-950"} underline hover:no-underline`}
               >
@@ -945,7 +971,7 @@ export default function App() {
                   <Layers className="w-3.5 h-3.5 text-slate-400" />
                   <span>Roster Version:</span>
                   <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black tracking-wide px-2 py-0.5 rounded uppercase">
-                    {currentScheme?.name || "Blues Rating Scheme"}
+                    {currentScheme?.name || "Sample Rating Scheme"}
                   </span>
                   {selectedVersion === "current" && (
                     <span className="text-xs sm:text-sm font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md font-mono ml-2 uppercase">
@@ -1004,7 +1030,7 @@ export default function App() {
                 </div>
               </div>
 
-              {selectedVersion !== "current" && (
+              {selectedVersion !== "current" && canEditCurrentVersion && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => {
@@ -1047,7 +1073,7 @@ export default function App() {
               )}
             </div>
 
-            {selectedVersion !== "current" && filteredRecords.length === 0 && (
+            {selectedVersion !== "current" && filteredRecords.length === 0 && canEditCurrentVersion && (
               <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-4 text-xs font-medium flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in print:hidden">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0 animate-bounce" />
@@ -1103,14 +1129,15 @@ export default function App() {
                   onAddClick={handleAddClick}
                   onImportCSV={handleImportCSV}
                   onUpdateRecord={handleSaveRecord}
-                  readOnly={!canEdit}
+                  readOnly={!canEditCurrentVersion}
+                  canEditCurrentRoster={canEditVersion("current")}
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
                   onPromoteVersion={async (fromVer) => {
                     await handleCopyVersion(fromVer, "current");
                     setSelectedVersion("current");
                   }}
-                  activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
+                  activeSchemeName={currentScheme?.name || "Sample Rating Scheme"}
                   proposedEffectiveDate={
                     selectedVersion === "future"
                       ? currentScheme?.proposedEffectiveDateFuture || ""
@@ -1133,8 +1160,8 @@ export default function App() {
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
                   onEditClick={handleEditClick}
-                  readOnly={!canEdit}
-                  activeSchemeName={currentScheme?.name || "Blues Rating Scheme"}
+                  readOnly={!canEditCurrentVersion}
+                  activeSchemeName={currentScheme?.name || "Sample Rating Scheme"}
                   effectiveAsOf={currentScheme?.effectiveAsOf || ""}
                   proposedDate={
                     selectedVersion === "future"
