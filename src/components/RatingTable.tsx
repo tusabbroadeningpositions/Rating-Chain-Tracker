@@ -8,12 +8,12 @@ import { jsPDF } from "jspdf";
 import * as htmlToImage from 'html-to-image';
 // @ts-ignore
 import XLSX from "xlsx-js-style";
-import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
+import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank, Note } from "../types";
 import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
 import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
-import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord } from "../lib/firebaseService";
+import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord, subscribeToNotes, addNote, deleteNote } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
 import { exportNcoerReportToPPTX } from "../utils/pptxExport";
 
@@ -35,6 +35,8 @@ interface RatingTableProps {
   effectiveAsOf?: string;
   onUpdateEffectiveAsOf?: (dateVal: string) => void;
   canEditCurrentRoster?: boolean;
+  activeSchemeId?: string | null;
+  user?: any;
 }
 
 const getSubmissionBadgeStyles = (subType: string) => {
@@ -73,6 +75,8 @@ export default function RatingTable({
   effectiveAsOf = "",
   onUpdateEffectiveAsOf,
   canEditCurrentRoster = true,
+  activeSchemeId = null,
+  user = null,
 }: RatingTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
@@ -91,6 +95,11 @@ export default function RatingTable({
   const [expandedHistoryRecordId, setExpandedHistoryRecordId] = useState<string | null>(null);
   const [recordHistory, setRecordHistory] = useState<any[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  // Notes state
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
+  const [activeNoteSoldierName, setActiveNoteSoldierName] = useState<string | null>(null);
+  const [noteInputText, setNoteInputText] = useState("");
   const [lateShiftPromptRecord, setLateShiftPromptRecord] = useState<ArmyRatingRecord | null>(null);
   const [manualLateRecord, setManualLateRecord] = useState<ArmyRatingRecord | null>(null);
   const [selectedCorRecord, setSelectedCorRecord] = useState<ArmyRatingRecord | null>(null);
@@ -2130,6 +2139,87 @@ export default function RatingTable({
     };
   }, [expandedHistoryRecordId]);
 
+  // Synchronize Notes (Firestore vs Local Storage fallback)
+  useEffect(() => {
+    if (activeSchemeId) {
+      const unsubscribe = subscribeToNotes(activeSchemeId, (notes) => {
+        setAllNotes(notes);
+      }, (err) => {
+        console.warn("Notes subscription failed, using local notes as fallback:", err);
+        const savedNotes = localStorage.getItem("army_ratings_notes");
+        if (savedNotes) {
+          try {
+            setAllNotes(JSON.parse(savedNotes));
+          } catch (e) {
+            console.error("Error parsing local notes", e);
+          }
+        }
+      });
+      return () => unsubscribe();
+    } else {
+      const savedNotes = localStorage.getItem("army_ratings_notes");
+      if (savedNotes) {
+        try {
+          setAllNotes(JSON.parse(savedNotes));
+        } catch (e) {
+          console.error("Error parsing local notes", e);
+        }
+      } else {
+        setAllNotes([]);
+      }
+    }
+  }, [activeSchemeId]);
+
+  const handleAddNote = async () => {
+    if (!activeNoteSoldierName || !noteInputText.trim()) return;
+    const cleanText = noteInputText.trim();
+    const cleanName = activeNoteSoldierName.trim().toLowerCase();
+
+    if (activeSchemeId) {
+      try {
+        await addNote(
+          user?.uid || "guest",
+          activeSchemeId,
+          cleanName,
+          cleanText
+        );
+        setNoteInputText("");
+      } catch (err) {
+        console.error("Failed to add note:", err);
+      }
+    } else {
+      // Local Guest storage fallback
+      const newNote: Note = {
+        id: "note-" + Math.random().toString(36).substring(2, 11),
+        schemeId: "guest",
+        userId: "guest",
+        soldierName: cleanName,
+        content: cleanText,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      const updated = [...allNotes, newNote];
+      setAllNotes(updated);
+      localStorage.setItem("army_ratings_notes", JSON.stringify(updated));
+      setNoteInputText("");
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (activeSchemeId) {
+      try {
+        await deleteNote(noteId);
+      } catch (err) {
+        console.error("Failed to delete note:", err);
+      }
+    } else {
+      // Local Guest storage fallback
+      const updated = allNotes.filter(n => n.id !== noteId);
+      setAllNotes(updated);
+      localStorage.setItem("army_ratings_notes", JSON.stringify(updated));
+    }
+  };
+
   const toggleHistory = (recordId: string) => {
     if (expandedHistoryRecordId === recordId) {
       setExpandedHistoryRecordId(null);
@@ -2900,10 +2990,10 @@ export default function RatingTable({
                                     ? "bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-800"
                                     : "bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-800"
                               }`}
-                              title={selectedVersion === "current" ? "View Projected / History" : "View Current Version Reference"}
+                              title={selectedVersion === "current" ? "View Projected / Notes" : "View Current Version Reference"}
                             >
                               <History className="w-2.5 h-2.5" />
-                              {selectedVersion === "current" ? "Projected / History" : "View Current"}
+                              {selectedVersion === "current" ? "Projected / Notes" : "View Current"}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                             </button>
                           )}
@@ -3242,13 +3332,37 @@ export default function RatingTable({
                           <div className="pl-12 pr-6 py-4 bg-slate-100 shadow-inner border-l-4 border-slate-400">
                             {selectedVersion === "current" ? (
                               <>
-                                <div className="flex items-center gap-2 mb-4">
-                                  <div className="p-1.5 bg-blue-100 rounded-full border border-blue-200">
-                                    <Sparkles className="w-4 h-4 text-blue-600" />
+                                <div className="flex items-center justify-between gap-2 mb-4 border-b border-slate-200 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-1.5 bg-blue-100 rounded-full border border-blue-200">
+                                      <Sparkles className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <div>
+                                      <h4 className="text-[12px] font-black text-blue-800 uppercase tracking-widest leading-none">Projected Version</h4>
+                                      <p className="text-[9px] text-blue-500 font-bold mt-1 uppercase tracking-tighter italic">Draft model from the "Projected" roster profile</p>
+                                    </div>
                                   </div>
                                   <div>
-                                    <h4 className="text-[12px] font-black text-blue-800 uppercase tracking-widest leading-none">Projected Version</h4>
-                                    <p className="text-[9px] text-blue-500 font-bold mt-1 uppercase tracking-tighter italic">Draft model from the "Projected" roster profile</p>
+                                    {(() => {
+                                      const noteCount = allNotes.filter(n => n.soldierName === r.name.trim().toLowerCase()).length;
+                                      return (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveNoteSoldierName(r.name);
+                                          }}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-black uppercase tracking-wider transition-all shadow-sm focus:outline-none cursor-pointer"
+                                        >
+                                          <FileText className="w-3.5 h-3.5 text-amber-700" />
+                                          <span>Notes</span>
+                                          {noteCount > 0 && (
+                                            <span className="px-1.5 py-0.5 text-[9px] bg-amber-600 text-white rounded-full font-sans font-bold leading-none shrink-0 min-w-[15px] text-center">
+                                              {noteCount}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
 
@@ -3588,13 +3702,37 @@ export default function RatingTable({
                             </>
                           ) : (
                             <>
-                                <div className="flex items-center gap-2 mb-4">
-                                  <div className="p-1.5 bg-slate-200 rounded-full border border-slate-300">
-                                    <History className="w-4 h-4 text-slate-600" />
+                                <div className="flex items-center justify-between gap-2 mb-4 border-b border-slate-200 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-1.5 bg-slate-200 rounded-full border border-slate-300">
+                                      <History className="w-4 h-4 text-slate-600" />
+                                    </div>
+                                    <div>
+                                      <h4 className="text-[12px] font-black text-slate-800 uppercase tracking-widest leading-none">Current Version Reference</h4>
+                                      <p className="text-[9px] text-slate-500 font-bold mt-1 uppercase tracking-tighter italic">Source data from the "Current" roster profile</p>
+                                    </div>
                                   </div>
                                   <div>
-                                    <h4 className="text-[12px] font-black text-slate-800 uppercase tracking-widest leading-none">Current Version Reference</h4>
-                                    <p className="text-[9px] text-slate-500 font-bold mt-1 uppercase tracking-tighter italic">Source data from the "Current" roster profile</p>
+                                    {(() => {
+                                      const noteCount = allNotes.filter(n => n.soldierName === r.name.trim().toLowerCase()).length;
+                                      return (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveNoteSoldierName(r.name);
+                                          }}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[10px] font-black uppercase tracking-wider transition-all shadow-sm focus:outline-none cursor-pointer"
+                                        >
+                                          <FileText className="w-3.5 h-3.5 text-amber-700" />
+                                          <span>Notes</span>
+                                          {noteCount > 0 && (
+                                            <span className="px-1.5 py-0.5 text-[9px] bg-amber-600 text-white rounded-full font-sans font-bold leading-none shrink-0 min-w-[15px] text-center">
+                                              {noteCount}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
 
@@ -4685,6 +4823,132 @@ export default function RatingTable({
               >
                 Close View
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Soldier Notes Popout Modal */}
+      {activeNoteSoldierName && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-amber-500 text-slate-950">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <FileText className="w-5 h-5 text-slate-950" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base tracking-tight leading-none uppercase">Soldier Profile Notes</h3>
+                  <p className="text-[10px] font-bold text-amber-950 tracking-widest mt-1 opacity-90 uppercase">
+                    Notes for {activeNoteSoldierName}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setActiveNoteSoldierName(null);
+                  setNoteInputText("");
+                }}
+                className="p-2 hover:bg-slate-950/10 rounded-full transition-colors active:scale-90"
+              >
+                <X className="w-6 h-6 text-slate-950" />
+              </button>
+            </div>
+
+            {/* Notes List Scrollable Area */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 bg-slate-50 min-h-[150px] max-h-[40vh]">
+              {(() => {
+                const filtered = allNotes.filter(n => n.soldierName === activeNoteSoldierName.trim().toLowerCase());
+                // Sort by createdAt descending (newest first)
+                const sorted = [...filtered].sort((a, b) => {
+                  const timeA = typeof a.createdAt === "number" ? a.createdAt : (a.createdAt?.toMillis?.() || 0);
+                  const timeB = typeof b.createdAt === "number" ? b.createdAt : (b.createdAt?.toMillis?.() || 0);
+                  return timeB - timeA;
+                });
+
+                if (sorted.length === 0) {
+                  return (
+                    <div className="text-center py-8 px-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                      <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">
+                        No notes recorded for this Soldier yet.
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Use the form below to document leadership observations, development targets, or rating track entries.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return sorted.map((note) => {
+                  const formatNoteTimestamp = (ts: any) => {
+                    if (!ts) return "Just now";
+                    const date = typeof ts === "number" ? new Date(ts) : (ts.toDate ? ts.toDate() : new Date(ts));
+                    return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                  };
+
+                  return (
+                    <div key={note.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow relative group">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1 flex-1">
+                          <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap leading-relaxed">
+                            {note.content}
+                          </p>
+                          <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5 pt-1 border-t border-slate-50 mt-2">
+                            <span>{formatNoteTimestamp(note.createdAt)}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteNote(note.id)}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded transition-all focus:outline-none focus:ring-1 focus:ring-rose-200"
+                          title="Delete Note"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Add Note Form Area */}
+            <div className="p-6 border-t border-slate-100 bg-white space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">
+                  Add New Observation or Note
+                </label>
+                <textarea
+                  value={noteInputText}
+                  onChange={(e) => setNoteInputText(e.target.value)}
+                  placeholder="Type notes here... Observations are automatically timestamped and shared across Current/Projected rosters."
+                  rows={3}
+                  className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium placeholder-slate-400 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveNoteSoldierName(null);
+                    setNoteInputText("");
+                  }}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none active:scale-95 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!noteInputText.trim()}
+                  onClick={handleAddNote}
+                  className="px-6 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-amber-500/10 active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Save Note
+                </button>
+              </div>
             </div>
           </div>
         </div>

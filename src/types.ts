@@ -66,6 +66,16 @@ export interface ArmyRatingRecord {
   updatedAt?: any; // Firestore timestamp or number
 }
 
+export interface Note {
+  id: string;
+  schemeId: string;
+  userId: string;
+  soldierName: string; // lowercase trimmed to carry over across rosters
+  content: string;
+  createdAt?: any; // timestamp or number
+  updatedAt?: any; // timestamp or number
+}
+
 export interface OrgNode {
   record: ArmyRatingRecord;
   children: OrgNode[];

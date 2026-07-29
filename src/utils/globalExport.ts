@@ -50,17 +50,14 @@ export function exportAllProfilesNcoerPPTX(
 }
 
 /**
- * Option 2 & 3: Export Excel spreadsheet for all profiles combined
- * rosterType = "current" or "projected"
+ * Helper to build a worksheet for a given rosterType (current or projected)
  */
-export function exportAllProfilesExcel(
+function buildRosterWorksheet(
   allProfilesData: { scheme: RatingScheme; records: ArmyRatingRecord[] }[],
-  rosterType: "current" | "projected"
+  rosterType: "current" | "projected",
+  globalRecords: ArmyRatingRecord[]
 ) {
   const exportRows: any[] = [];
-  const globalRecords: ArmyRatingRecord[] = [];
-
-  allProfilesData.forEach(p => globalRecords.push(...p.records));
 
   const helperGetName = (id: string) => {
     if (!id || id === "-") return "";
@@ -276,12 +273,49 @@ export function exportAllProfilesExcel(
     });
   }
 
+  return worksheet;
+}
+
+/**
+ * Option 2 & 3: Export Excel spreadsheet for all profiles combined
+ * rosterType = "current" or "projected"
+ */
+export function exportAllProfilesExcel(
+  allProfilesData: { scheme: RatingScheme; records: ArmyRatingRecord[] }[],
+  rosterType: "current" | "projected"
+) {
+  const globalRecords: ArmyRatingRecord[] = [];
+  allProfilesData.forEach(p => globalRecords.push(...p.records));
+
+  const worksheet = buildRosterWorksheet(allProfilesData, rosterType, globalRecords);
+
   const workbook = XLSX.utils.book_new();
   const sheetName = rosterType === "current" ? "Current Rosters" : "Projected Rosters";
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
   const dateTag = new Date().toISOString().split("T")[0];
   const filename = `Combined_All_Profiles_${rosterType === "current" ? "Current" : "Projected"}_Rosters_${dateTag}.xlsx`;
+  XLSX.writeFile(workbook, filename);
+}
+
+/**
+ * Option 2b: Export Excel spreadsheet with two sheets (Current + Projected rosters)
+ */
+export function exportAllProfilesExcelDualSheet(
+  allProfilesData: { scheme: RatingScheme; records: ArmyRatingRecord[] }[]
+) {
+  const globalRecords: ArmyRatingRecord[] = [];
+  allProfilesData.forEach(p => globalRecords.push(...p.records));
+
+  const currentWorksheet = buildRosterWorksheet(allProfilesData, "current", globalRecords);
+  const projectedWorksheet = buildRosterWorksheet(allProfilesData, "projected", globalRecords);
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, currentWorksheet, "Current Rosters");
+  XLSX.utils.book_append_sheet(workbook, projectedWorksheet, "Projected Rosters");
+
+  const dateTag = new Date().toISOString().split("T")[0];
+  const filename = `Combined_All_Profiles_Current_and_Projected_Rosters_${dateTag}.xlsx`;
   XLSX.writeFile(workbook, filename);
 }
 

@@ -712,7 +712,7 @@ export function exportNcoerReportToPPTX(
     { id: "late_hqda", name: "Late to HQDA" }
   ];
 
-  function drawSlideHeaderAndFooter(slide: any, filterName: string, isContinued: boolean, rankStatsStr?: string) {
+  function drawSlideHeaderAndFooter(slide: any, filterName: string, isContinued: boolean, totalSoldiers?: number) {
     // Slate Banner background
     slide.addShape(pptx.ShapeType.rect, {
       x: 0,
@@ -743,9 +743,9 @@ export function exportNcoerReportToPPTX(
       valign: "middle"
     });
 
-    // Rank stats under header title (if provided)
-    if (rankStatsStr) {
-      slide.addText(`SECTION RANK COUNTS: ${rankStatsStr.toUpperCase()}`, {
+    // Total soldiers under header title (if provided)
+    if (totalSoldiers !== undefined) {
+      slide.addText(`TOTAL NUMBER OF SOLDIERS: ${totalSoldiers}`, {
         x: 0.5,
         y: 0.60,
         w: 8.5,
@@ -909,12 +909,12 @@ export function exportNcoerReportToPPTX(
       }
     };
 
-    const chunkSize = 6;
+    const chunkSize = 16;
     for (let i = 0; i < filtered.length; i += chunkSize) {
       const chunk = filtered.slice(i, i + chunkSize);
       const isContinued = i > 0;
       const slide = pptx.addSlide();
-      drawSlideHeaderAndFooter(slide, cat.name, isContinued, rankCountsStr);
+      drawSlideHeaderAndFooter(slide, cat.name, isContinued, filtered.length);
 
       const tableRows: any[] = [
         [
@@ -969,11 +969,11 @@ export function exportNcoerReportToPPTX(
 
       slide.addTable(tableRows, {
         x: 0.5,
-        y: 1.3,
+        y: 1.2,
         w: 12.33,
         colW: [2.1, 1.0, 1.9, 1.5, 1.7, 1.7, 1.4, 1.03],
         border: { type: "solid", color: "CBD5E1", pt: 1 },
-        margin: [4, 6, 4, 6],
+        margin: [2, 4, 2, 4],
         valign: "middle"
       });
     }

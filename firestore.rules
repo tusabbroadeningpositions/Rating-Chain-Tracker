@@ -84,6 +84,18 @@ service cloud.firestore {
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
+    function isValidNote(data) {
+      return data.keys().hasAll(['id', 'schemeId', 'userId', 'soldierName', 'content']) &&
+             data.keys().size() <= 7 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.schemeId is string && data.schemeId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.soldierName is string && data.soldierName.size() <= 400 &&
+             data.content is string && data.content.size() <= 10000 &&
+             (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp || data.createdAt == null) &&
+             (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
+    }
+
     // --- MASTER GATE SCHEME AUTHENTICATION ---
 
     function isSchemeOwner(sId) {
@@ -136,6 +148,31 @@ service cloud.firestore {
                     );
                     
       allow delete: if isValidId(schemeId) && isOwner(resource.data.userId);
+    }
+
+    match /notes/{noteId} {
+      allow get: if isValidId(noteId) && (
+        isOwner(resource.data.userId) || isSchemeReadable(resource.data.schemeId)
+      );
+      
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || 
+                     isSchemeReadable(resource.data.schemeId);
+      
+      allow create: if isValidId(noteId) &&
+                    isValidNote(incoming()) &&
+                    isSchemeEditable(incoming().schemeId) &&
+                    isOwner(incoming().userId);
+                    
+      allow update: if isValidId(noteId) &&
+                    isValidNote(incoming()) &&
+                    isSchemeEditable(existing().schemeId) &&
+                    isOwner(existing().userId) && (
+                      incoming().diff(existing()).affectedKeys().hasOnly([
+                        'content', 'updatedAt'
+                      ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
+                    );
+                    
+      allow delete: if isValidId(noteId) && isSchemeEditable(resource.data.schemeId);
     }
 
     match /records/{recordId} {

@@ -15,12 +15,13 @@ import {
   addDoc
 } from "firebase/firestore";
 import { db, auth } from "./firebase";
-import { ArmyRatingRecord, RatingScheme } from "../types";
+import { ArmyRatingRecord, RatingScheme, Note } from "../types";
 import { INITIAL_RECORDS, generateSampleRecords } from "../sampleData";
 
 export const SCHEMES_COL = "schemes";
 export const RECORDS_COL = "records";
 export const HISTORY_COL = "history";
+export const NOTES_COL = "notes";
 
 // --- REQUIRED ERROR HANDLING ENUMS AND INTERFACES ---
 
@@ -666,5 +667,78 @@ export async function restoreRecordHistory(recordId: string, historyData: any): 
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${RECORDS_COL}/${recordId}`);
     throw error;
+  }
+}
+
+export function subscribeToNotes(
+  schemeId: string,
+  onUpdate: (notes: Note[]) => void,
+  onError?: (error: Error) => void
+) {
+  const q = query(
+    collection(db, NOTES_COL),
+    where("schemeId", "==", schemeId),
+    orderBy("createdAt", "asc")
+  );
+  
+  return onSnapshot(q, (snapshot) => {
+    const notes = snapshot.docs.map(d => ({
+      ...d.data(),
+      id: d.id,
+      createdAt: d.data().createdAt?.toMillis?.() || Date.now()
+    })) as Note[];
+    onUpdate(notes);
+  }, (error) => {
+    console.error("Notes subscription failed:", error);
+    if (onError) onError(error);
+    else handleFirestoreError(error, OperationType.LIST, NOTES_COL);
+  });
+}
+
+export async function addNote(
+  userId: string,
+  schemeId: string,
+  soldierName: string,
+  content: string
+): Promise<string> {
+  const noteRef = doc(collection(db, NOTES_COL));
+  const newNote = {
+    id: noteRef.id,
+    schemeId,
+    userId,
+    soldierName: soldierName.trim().toLowerCase(),
+    content,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  try {
+    await setDoc(noteRef, newNote);
+    return noteRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, `${NOTES_COL}/${noteRef.id}`);
+  }
+}
+
+export async function updateNote(
+  noteId: string,
+  content: string
+): Promise<void> {
+  const noteRef = doc(db, NOTES_COL, noteId);
+  try {
+    await updateDoc(noteRef, {
+      content,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `${NOTES_COL}/${noteId}`);
+  }
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  const noteRef = doc(db, NOTES_COL, noteId);
+  try {
+    await deleteDoc(noteRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${NOTES_COL}/${noteId}`);
   }
 }

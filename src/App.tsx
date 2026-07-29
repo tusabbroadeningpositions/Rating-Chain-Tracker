@@ -710,7 +710,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans text-slate-900 select-none">
       
       {/* Professional Polish Military Header */}
-      <header className="bg-[#1e293b] text-white p-4 shadow-lg relative z-40 border-b-2 border-slate-700 print:hidden">
+      <header className="bg-[#1e293b] text-white p-4 shadow-lg relative z-[100] border-b-2 border-slate-700 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-4">
           
           <div className="flex items-center justify-between w-full lg:w-auto">
@@ -1131,6 +1131,8 @@ export default function App() {
                   onUpdateRecord={handleSaveRecord}
                   readOnly={!canEditCurrentVersion}
                   canEditCurrentRoster={canEditVersion("current")}
+                  activeSchemeId={activeSchemeId}
+                  user={user}
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
                   onPromoteVersion={async (fromVer) => {

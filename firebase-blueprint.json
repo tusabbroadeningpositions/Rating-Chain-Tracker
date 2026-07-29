@@ -187,12 +187,52 @@
         }
       },
       "required": ["id", "schemeId", "userId", "element", "rank", "name", "role"]
+    },
+    "Note": {
+      "title": "Soldier Note",
+      "description": "A timestamped note attached to a soldier in a rating scheme.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique ID of the note."
+        },
+        "schemeId": {
+          "type": "string",
+          "description": "The ID of the parent RatingScheme."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The creator or owner of this note."
+        },
+        "soldierName": {
+          "type": "string",
+          "description": "The name of the soldier in lowercase and trimmed to match across rosters."
+        },
+        "content": {
+          "type": "string",
+          "description": "The content of the note."
+        },
+        "createdAt": {
+          "type": "object",
+          "description": "Firestore server timestamp representing the creation time."
+        },
+        "updatedAt": {
+          "type": "object",
+          "description": "Firestore server timestamp representing the last update time."
+        }
+      },
+      "required": ["id", "schemeId", "userId", "soldierName", "content"]
     }
   },
   "firestore": {
     "/schemes/{schemeId}": {
       "schema": "RatingScheme",
       "description": "Collection of rating schemes created by users."
+    },
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "Collection of timestamped notes for soldiers."
     },
     "/records/{recordId}": {
       "schema": "ArmyRatingRecord",

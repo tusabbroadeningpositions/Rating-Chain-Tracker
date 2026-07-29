@@ -10,6 +10,7 @@ import { getRecordsForScheme } from "../lib/firebaseService";
 import {
   exportAllProfilesNcoerPPTX,
   exportAllProfilesExcel,
+  exportAllProfilesExcelDualSheet,
   exportAllProfilesBubbleMapPPTX
 } from "../utils/globalExport";
 
@@ -85,6 +86,9 @@ export default function GlobalExportDropdown({
         case 3:
           exportAllProfilesExcel(profilesData, "projected");
           break;
+        case 6:
+          exportAllProfilesExcelDualSheet(profilesData);
+          break;
         case 4:
           exportAllProfilesBubbleMapPPTX(profilesData, "current");
           break;
@@ -121,7 +125,7 @@ export default function GlobalExportDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-80 md:w-96 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-30 overflow-hidden text-slate-100 divide-y divide-slate-800">
+        <div className="absolute top-full left-0 mt-1 w-80 md:w-96 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-[110] overflow-hidden text-slate-100 divide-y divide-slate-800">
           <div className="px-4 py-2.5 bg-slate-950/60 flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-emerald-400" />
@@ -204,6 +208,29 @@ export default function GlobalExportDropdown({
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
                     Export Excel spreadsheet combining projected rosters from all profiles
+                  </p>
+                </div>
+              </button>
+
+              {/* Option 6: Excel Current + Projected Roster */}
+              <button
+                onClick={() => handleExportOption(6)}
+                className="w-full text-left p-2.5 rounded-md hover:bg-slate-800 transition-colors flex items-start gap-3 group"
+              >
+                <div className="p-2 bg-teal-500/10 border border-teal-500/20 text-teal-400 rounded group-hover:bg-teal-500/20 transition-colors shrink-0">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 group-hover:text-teal-300 transition-colors">
+                      Combined Excel — Current + Projected
+                    </span>
+                    <span className="text-[9px] bg-teal-500/20 text-teal-300 px-1.5 py-0.5 rounded font-mono uppercase font-bold">
+                      EXCEL
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
+                    Export Excel spreadsheet with two sheets containing current and projected rosters from all profiles
                   </p>
                 </div>
               </button>
