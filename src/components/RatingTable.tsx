@@ -1675,6 +1675,24 @@ export default function RatingTable({
   };
 
   const executeCopyToProjected = (source: ArmyRatingRecord, targetToOverwrite: ArmyRatingRecord | null, addAsDuplicate: boolean) => {
+    const mapAlternateIdToProjectedId = (alternateId: string) => {
+      if (!alternateId || alternateId === "-" || alternateId === "none") return alternateId;
+      const searchSource = allRecords || records || [];
+      const altRecord = searchSource.find(r => r.id === alternateId);
+      if (!altRecord) return alternateId;
+      
+      const projectedRecord = searchSource.find(r => 
+        r.version === "future" && 
+        r.name.trim().toLowerCase() === altRecord.name.trim().toLowerCase()
+      );
+      return projectedRecord ? projectedRecord.id : alternateId;
+    };
+
+    const mappedRaterId = mapAlternateIdToProjectedId(source.raterId);
+    const mappedSeniorRaterId = mapAlternateIdToProjectedId(source.seniorRaterId);
+    const mappedReviewerId = mapAlternateIdToProjectedId(source.reviewerId);
+    const mappedCorNewRaterId = source.corNewRaterId ? mapAlternateIdToProjectedId(source.corNewRaterId) : source.corNewRaterId;
+
     if (targetToOverwrite && !addAsDuplicate) {
       // Overwrite the existing projected record with the source fields, but keep its ID to preserve history
       const updatedRecord = {
@@ -1688,14 +1706,14 @@ export default function RatingTable({
         from: source.from,
         thru: source.thru,
         dueHqda: source.dueHqda,
-        raterId: source.raterId,
+        raterId: mappedRaterId,
         raterEffectiveDate: source.raterEffectiveDate,
-        seniorRaterId: source.seniorRaterId,
+        seniorRaterId: mappedSeniorRaterId,
         seniorRaterEffectiveDate: source.seniorRaterEffectiveDate,
-        reviewerId: source.reviewerId,
+        reviewerId: mappedReviewerId,
         reviewerEffectiveDate: source.reviewerEffectiveDate,
         submissionType: source.submissionType,
-        corNewRaterId: source.corNewRaterId,
+        corNewRaterId: mappedCorNewRaterId,
         corEffectiveDate: source.corEffectiveDate,
         ncoerStatus: source.ncoerStatus,
         isCustomStatus: source.isCustomStatus,
@@ -1710,7 +1728,11 @@ export default function RatingTable({
       const copiedRecord = {
         ...source,
         id: newId,
-        version: "future" as const
+        version: "future" as const,
+        raterId: mappedRaterId,
+        seniorRaterId: mappedSeniorRaterId,
+        reviewerId: mappedReviewerId,
+        corNewRaterId: mappedCorNewRaterId
       };
       onUpdateRecord(copiedRecord);
     }
