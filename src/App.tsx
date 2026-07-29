@@ -453,7 +453,7 @@ export default function App() {
     const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
     const recordWithVersion = {
       ...record,
-      version: editingRecord ? (editingRecord.version || "current") : selectedVersion
+      version: record.version || (editingRecord ? (editingRecord.version || "current") : selectedVersion)
     };
 
     if (updateRatees) {

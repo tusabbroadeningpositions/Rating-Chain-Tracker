@@ -1679,6 +1679,7 @@ export default function RatingTable({
       // Overwrite the existing projected record with the source fields, but keep its ID to preserve history
       const updatedRecord = {
         ...targetToOverwrite,
+        version: targetToOverwrite.version || "future",
         rank: source.rank,
         element: source.element,
         dutyMosc: source.dutyMosc,
@@ -3234,8 +3235,7 @@ export default function RatingTable({
                               {(() => {
                                 const projected = allRecords.find(pr => 
                                   pr.version === "future" && 
-                                  pr.name.toLowerCase() === r.name.toLowerCase() && 
-                                  pr.rank.toLowerCase() === r.rank.toLowerCase()
+                                  pr.name.trim().toLowerCase() === r.name.trim().toLowerCase()
                                 );
                                 
                                 if (!projected) return (
@@ -3580,7 +3580,7 @@ export default function RatingTable({
                                   {(() => {
                                     const current = allRecords?.find(cr => 
                                       (cr.version === "current" || !cr.version) && 
-                                      cr.name.toLowerCase() === r.name.toLowerCase()
+                                      cr.name.trim().toLowerCase() === r.name.trim().toLowerCase()
                                     );
                                     
                                     if (!current) return (
