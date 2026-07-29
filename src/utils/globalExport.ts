@@ -107,7 +107,6 @@ function buildRosterWorksheet(
       rowCounter++;
 
       exportRows.push({
-        "Profile / Scheme": profileName,
         "Element": r.element,
         "Principal\nDuty Title": r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role,
         "Duty MOSC": r.dutyMosc,
@@ -130,7 +129,6 @@ function buildRosterWorksheet(
   const worksheet = XLSX.utils.json_to_sheet(exportRows);
 
   worksheet["!cols"] = [
-    { wch: 22 }, // Profile
     { wch: 15 }, // Element
     { wch: 25 }, // Principal Duty Title
     { wch: 12 }, // Duty MOSC
@@ -148,7 +146,7 @@ function buildRosterWorksheet(
     { wch: 15 }  // Submission Type
   ];
 
-  const headerCols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"];
+  const headerCols = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
   headerCols.forEach(col => {
     const cellRef = `${col}1`;
     if (worksheet[cellRef]) {
@@ -190,84 +188,84 @@ function buildRosterWorksheet(
       const currentRaterId = currentIsLate && currentSoldier.lateRaterId ? currentSoldier.lateRaterId : currentSoldier.raterId;
       const currentSeniorRaterId = currentIsLate && currentSoldier.lateSeniorRaterId ? currentSoldier.lateSeniorRaterId : currentSoldier.seniorRaterId;
 
-      // B: Element
+      // A: Element
       if (normalize(r.element) !== normalize(currentSoldier.element)) {
-        const ref = `B${rowIdx}`;
+        const ref = `A${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // C: Principal Duty Title
+      // B: Principal Duty Title
       const titleA = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role;
       const titleB = currentSoldier.role === RatingRole.KEY_LEADER && currentSoldier.keyLeaderTitle ? `${currentSoldier.role} (${currentSoldier.keyLeaderTitle})` : currentSoldier.role;
       if (normalize(titleA) !== normalize(titleB)) {
+        const ref = `B${rowIdx}`;
+        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
+      }
+      // C: Duty MOSC
+      if (normalize(r.dutyMosc) !== normalize(currentSoldier.dutyMosc)) {
         const ref = `C${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // D: Duty MOSC
-      if (normalize(r.dutyMosc) !== normalize(currentSoldier.dutyMosc)) {
+      // D: Rank
+      if (normalize(r.rank) !== normalize(currentSoldier.rank)) {
         const ref = `D${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // E: Rank
-      if (normalize(r.rank) !== normalize(currentSoldier.rank)) {
-        const ref = `E${rowIdx}`;
+      // F: From
+      if (formatDateToYYYYMMDD(r.from) !== formatDateToYYYYMMDD(currentSoldier.from)) {
+        const ref = `F${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // G: From
-      if (formatDateToYYYYMMDD(r.from) !== formatDateToYYYYMMDD(currentSoldier.from)) {
+      // G: Thru
+      if (formatDateToYYYYMMDD(r.thru) !== formatDateToYYYYMMDD(currentSoldier.thru)) {
         const ref = `G${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // H: Thru
-      if (formatDateToYYYYMMDD(r.thru) !== formatDateToYYYYMMDD(currentSoldier.thru)) {
-        const ref = `H${rowIdx}`;
-        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
-      }
-      // I: Due to HQDA
+      // H: Due to HQDA
       const dueA = formatDateToYYYYMMDD(r.dueHqda || add90Days(r.thru));
       const dueB = formatDateToYYYYMMDD(currentSoldier.dueHqda || add90Days(currentSoldier.thru));
       if (dueA !== dueB) {
+        const ref = `H${rowIdx}`;
+        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
+      }
+      // I: Rater
+      if (helperGetName(raterId) !== helperGetName(currentRaterId)) {
         const ref = `I${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // J: Rater
-      if (helperGetName(raterId) !== helperGetName(currentRaterId)) {
-        const ref = `J${rowIdx}`;
-        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
-      }
-      // K: Rater Effective Date
+      // J: Rater Effective Date
       const raterEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.raterEffectiveDate);
       const raterEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.raterEffectiveDate);
       if (raterEffA !== raterEffB) {
+        const ref = `J${rowIdx}`;
+        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
+      }
+      // K: Senior Rater
+      if (helperGetName(seniorRaterId) !== helperGetName(currentSeniorRaterId)) {
         const ref = `K${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // L: Senior Rater
-      if (helperGetName(seniorRaterId) !== helperGetName(currentSeniorRaterId)) {
-        const ref = `L${rowIdx}`;
-        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
-      }
-      // M: Senior Rater Effective Date
+      // L: Senior Rater Effective Date
       const srEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.seniorRaterEffectiveDate);
       const srEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.seniorRaterEffectiveDate);
       if (srEffA !== srEffB) {
+        const ref = `L${rowIdx}`;
+        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
+      }
+      // M: Reviewer
+      if (helperGetName(r.reviewerId) !== helperGetName(currentSoldier.reviewerId)) {
         const ref = `M${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // N: Reviewer
-      if (helperGetName(r.reviewerId) !== helperGetName(currentSoldier.reviewerId)) {
-        const ref = `N${rowIdx}`;
-        if (worksheet[ref]) worksheet[ref].s = highlightStyle;
-      }
-      // O: Reviewer Effective Date
+      // N: Reviewer Effective Date
       const revEffA = isLate ? "N/A (Late)" : formatDateToYYYYMMDD(r.reviewerEffectiveDate);
       const revEffB = currentIsLate ? "N/A (Late)" : formatDateToYYYYMMDD(currentSoldier.reviewerEffectiveDate);
       if (revEffA !== revEffB) {
-        const ref = `O${rowIdx}`;
+        const ref = `N${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
-      // P: Submission Type
+      // O: Submission Type
       if (normalize(r.submissionType || "ANN") !== normalize(currentSoldier.submissionType || "ANN")) {
-        const ref = `P${rowIdx}`;
+        const ref = `O${rowIdx}`;
         if (worksheet[ref]) worksheet[ref].s = highlightStyle;
       }
     });
@@ -277,7 +275,7 @@ function buildRosterWorksheet(
 }
 
 /**
- * Option 2 & 3: Export Excel spreadsheet for all profiles combined
+ * Option 2 & 3: Export Excel spreadsheet for all profiles with each profile on a different sheet
  * rosterType = "current" or "projected"
  */
 export function exportAllProfilesExcel(
@@ -287,11 +285,30 @@ export function exportAllProfilesExcel(
   const globalRecords: ArmyRatingRecord[] = [];
   allProfilesData.forEach(p => globalRecords.push(...p.records));
 
-  const worksheet = buildRosterWorksheet(allProfilesData, rosterType, globalRecords);
-
   const workbook = XLSX.utils.book_new();
-  const sheetName = rosterType === "current" ? "Current Rosters" : "Projected Rosters";
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  const usedNames = new Set<string>();
+
+  allProfilesData.forEach((p, idx) => {
+    const worksheet = buildRosterWorksheet([p], rosterType, globalRecords);
+
+    // Clean sheet names: remove chars :, ?, *, /, \, [ or ]
+    let rawName = p.scheme.name.replace(/[:\?\*\/\\\[\]]/g, "").trim();
+    if (!rawName) {
+      rawName = `Profile ${idx + 1}`;
+    }
+
+    let sheetName = rawName.substring(0, 31);
+    let counter = 1;
+    while (usedNames.has(sheetName.toLowerCase())) {
+      const suffix = ` (${counter})`;
+      const maxLen = 31 - suffix.length;
+      sheetName = rawName.substring(0, maxLen) + suffix;
+      counter++;
+    }
+    usedNames.add(sheetName.toLowerCase());
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  });
 
   const dateTag = new Date().toISOString().split("T")[0];
   const filename = `Combined_All_Profiles_${rosterType === "current" ? "Current" : "Projected"}_Rosters_${dateTag}.xlsx`;
