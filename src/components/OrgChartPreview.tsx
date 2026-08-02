@@ -8,7 +8,7 @@ import { motion } from "motion/react";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
-import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle, History as HistoryIcon } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle, HelpCircle, History as HistoryIcon } from "lucide-react";
 
 interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
@@ -20,6 +20,9 @@ interface OrgChartPreviewProps {
   allRecords?: ArmyRatingRecord[];
   effectiveAsOf?: string;
   proposedDate?: string;
+  schemes?: Array<{ id: string; name: string }>;
+  activeSchemeId?: string;
+  onSelectScheme?: (schemeId: string) => void;
 }
 
 const getVerticalNameClass = (rank: string, name: string) => {
@@ -44,7 +47,10 @@ export default function OrgChartPreview({
   onChangeVersion,
   allRecords = [],
   effectiveAsOf,
-  proposedDate
+  proposedDate,
+  schemes = [],
+  activeSchemeId,
+  onSelectScheme
 }: OrgChartPreviewProps) {
   const [zoom, setZoom] = useState(0.95);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,6 +60,43 @@ export default function OrgChartPreview({
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ArmyRatingRecord | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const archivedVersions = React.useMemo(() => {
+    const versions = new Set<string>();
+    allRecords.forEach(r => {
+      if (r.version && r.version.startsWith("archive_")) {
+        versions.add(r.version);
+      }
+    });
+    return Array.from(versions).map(ver => {
+      const parts = ver.split("_");
+      const datePart = parts[1] || "Not Set";
+      const timestampPart = parseInt(parts[2] || "0", 10);
+      const archivedAt = timestampPart ? new Date(timestampPart).toLocaleString() : "Unknown Date";
+      return {
+        id: ver,
+        effectiveAsOf: datePart,
+        archivedAt,
+        timestamp: timestampPart
+      };
+    }).sort((a, b) => b.timestamp - a.timestamp);
+  }, [allRecords]);
+
+  const stats = React.useMemo(() => {
+    const roleCounts: Record<string, number> = {};
+    const rankCounts: Record<string, number> = {};
+    
+    records.forEach(r => {
+      roleCounts[r.role] = (roleCounts[r.role] || 0) + 1;
+      rankCounts[r.rank] = (rankCounts[r.rank] || 0) + 1;
+    });
+
+    return {
+      total: records.length,
+      roles: roleCounts,
+      ranks: rankCounts
+    };
+  }, [records]);
 
   const enterFullscreen = () => {
     setIsFullscreen(true);
@@ -86,6 +129,16 @@ export default function OrgChartPreview({
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
+
+  // Add global class to body for fullscreen targeting
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.classList.add("is-fullscreen-mode");
+    } else {
+      document.body.classList.remove("is-fullscreen-mode");
+    }
+    return () => document.body.classList.remove("is-fullscreen-mode");
+  }, [isFullscreen]);
 
   // Listen for Escape key to exit fullscreen mode
   useEffect(() => {
@@ -269,6 +322,13 @@ export default function OrgChartPreview({
     return raterId.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
   };
 
+  const getRaterRole = (raterId: string): RatingRole | string | null => {
+    if (!raterId || raterId === "-") return null;
+    const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
+    const found = searchSource.find(rec => rec.id === raterId);
+    return found ? found.role : null;
+  };
+
   const getSeniorRaterMismatchInfo = (r: ArmyRatingRecord) => {
     if (!r.raterId) return null;
     const searchSource = (allRecords && allRecords.length > 0) ? allRecords : records;
@@ -350,7 +410,10 @@ export default function OrgChartPreview({
     
     if (rateeGrade !== null && raterGrade !== null) {
       if (raterGrade - rateeGrade >= 2) {
-        return `Rater ${raterRecord.name} (${raterRank}) is two or more ranks above ratee ${r.name} (${rateeRank}). A MSG should not rate a SSG, and a SGM should not rate a SFC.`;
+        return {
+          raterName: raterRecord.name,
+          raterRank: raterRank
+        };
       }
     }
     return null;
@@ -366,7 +429,10 @@ export default function OrgChartPreview({
     const raterRank = (raterRecord.rank || "").trim().toUpperCase();
     
     if (rateeRank === raterRank && (rateeRank === "SSG" || rateeRank === "SFC" || rateeRank === "MSG")) {
-      return `Rater ${raterRecord.name} (${raterRank}) has the same rank as ratee ${r.name} (${rateeRank}). An NCO should not rate an NCO of the same rank.`;
+      return {
+        raterName: raterRecord.name,
+        raterRank: raterRank
+      };
     }
     return null;
   };
@@ -487,7 +553,7 @@ export default function OrgChartPreview({
           )}
 
           <div className={isFullscreen 
-            ? "fixed inset-0 z-50 bg-slate-950 flex flex-col h-screen w-screen overflow-hidden p-0" 
+            ? "fixed inset-0 z-[999] bg-slate-950 flex flex-col h-screen w-screen overflow-hidden p-0" 
             : `bg-slate-900 rounded p-5 border overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between transition-all duration-300 ${
                 selectedVersion?.startsWith("archive_") 
                   ? "border-amber-500/80 ring-4 ring-amber-500/15" 
@@ -495,119 +561,230 @@ export default function OrgChartPreview({
               }`
           }>
             {isFullscreen && (
-              <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b shadow-lg ${
-                selectedVersion === "future" ? "bg-sky-600 border-sky-700 text-white" : 
-                selectedVersion === "alternate" ? "bg-emerald-600 border-emerald-700 text-white" : 
-                selectedVersion?.startsWith("archive_") ? "bg-amber-850 border-amber-900 text-amber-100" :
-                "bg-[#1e293b] border-slate-800 text-white"
-              }`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                    selectedVersion === "future" ? "bg-white" :
-                    selectedVersion === "alternate" ? "bg-white" :
-                    "bg-emerald-400"
-                  }`}></div>
-                  <div>
-                    <h2 className="text-xs font-black text-slate-100 tracking-wider uppercase flex items-center gap-2">
-                      Visual Org Chart Bubble Map
-                    </h2>
-                    <p className="text-[10px] text-slate-300 mt-0.5 font-bold uppercase tracking-widest">{activeSchemeName}</p>
+              <div className="transition-colors duration-300 px-6 py-3 flex items-center justify-between shrink-0 gap-4 z-10 border-b shadow-lg bg-[#1e293b] border-slate-800 text-white">
+                <div className="flex items-center gap-6 flex-wrap">
+                  {/* Profile Title & Effective/Proposed Date */}
+                  <div className="flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${
+                      selectedVersion === "future" ? "bg-sky-300" :
+                      selectedVersion === "alternate" ? "bg-emerald-300" :
+                      selectedVersion?.startsWith("archive_") ? "bg-amber-400" :
+                      "bg-emerald-400"
+                    }`}></div>
+                    <div>
+                      <span className="text-[9px] font-extrabold text-slate-300/80 uppercase tracking-widest block leading-none mb-1">
+                        Visual Org Chart Bubble Map
+                      </span>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="text-sm sm:text-base md:text-lg font-black text-white uppercase tracking-wide">
+                          {selectedVersion?.startsWith("archive_") 
+                            ? `Historical Archive: ${activeSchemeName}`
+                            : activeSchemeName}
+                        </h2>
+                        
+                        {/* Effective Date / Proposed Date Badge right next to title */}
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-white/15 text-white border border-white/20 shadow-inner font-mono tracking-wide">
+                          <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                          {selectedVersion === "current" && `Effective: ${effectiveAsOf || "Not Set"}`}
+                          {(selectedVersion === "future" || selectedVersion === "alternate") && `Proposed Eff: ${proposedDate || "Not Set"}`}
+                          {selectedVersion?.startsWith("archive_") && `Effective: ${archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"}`}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                
-                {/* Center: Controls */}
-                <div className="flex items-center gap-4">
-                  {/* Version Selection Switcher */}
-                  {onChangeVersion && (
-                    <div className="inline-flex rounded-md bg-black/25 p-0.5 border border-white/10 shadow-inner">
-                      <button
-                        type="button"
-                        onClick={() => onChangeVersion("current")}
-                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
-                          selectedVersion === "current"
-                            ? "bg-slate-800 text-white font-black shadow-sm"
-                            : "text-slate-300 hover:text-white"
-                        }`}
+
+                  {/* Rating Scheme Profile Selector (If multiple schemes exist) */}
+                  {schemes && schemes.length > 1 && onSelectScheme && (
+                    <div className="flex items-center gap-2 pl-4 border-l border-white/15">
+                      <span className="text-[10px] font-black text-slate-200 uppercase tracking-wider shrink-0">Scheme Profile:</span>
+                      <select
+                        value={activeSchemeId || ""}
+                        onChange={(e) => onSelectScheme(e.target.value)}
+                        className="bg-slate-900/90 hover:bg-slate-900 text-white text-xs font-bold rounded-md px-2.5 py-1.5 outline-none border border-slate-600 focus:border-amber-400 max-w-[180px] truncate cursor-pointer transition-colors shadow-sm"
                       >
-                        Current
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onChangeVersion("future")}
-                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-                          selectedVersion === "future"
-                            ? "bg-sky-600 text-white font-black shadow-sm"
-                            : "text-slate-300 hover:text-white"
-                        }`}
-                      >
-                        <span>Projected</span>
-                        {allRecords?.filter(r => (r.version || "current") === "future").length > 0 && (
-                          <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onChangeVersion("alternate")}
-                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-                          selectedVersion === "alternate"
-                            ? "bg-emerald-600 text-white font-black shadow-sm"
-                            : "text-slate-300 hover:text-white"
-                        }`}
-                      >
-                        <span>Alternate</span>
-                        {allRecords?.filter(r => (r.version || "current") === "alternate").length > 0 && (
-                          <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                        )}
-                      </button>
+                        {schemes.map(s => (
+                          <option key={s.id} value={s.id} className="bg-slate-900 text-white font-medium">
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
 
+                  {/* Prominent Roster Switcher */}
+                  {onChangeVersion && (
+                    <div className="flex items-center gap-1.5 pl-4 border-l border-white/15">
+                      <div className="flex rounded-md bg-black/20 p-0.5 border border-white/10 items-center">
+                        <button
+                          type="button"
+                          onClick={() => onChangeVersion("current")}
+                          className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all ${
+                            selectedVersion === "current"
+                              ? "bg-slate-800 text-sky-100 font-black shadow-sm ring-2 ring-sky-300 border border-sky-400"
+                              : "text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          Current
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onChangeVersion("future")}
+                          className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                            selectedVersion === "future"
+                              ? "bg-sky-500 text-white font-black shadow-sm"
+                              : "text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          <span>Projected</span>
+                          {allRecords?.filter(r => (r.version || "current") === "future").length > 0 && (
+                            <span className="inline-block w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onChangeVersion("alternate")}
+                          className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                            selectedVersion === "alternate"
+                              ? "bg-emerald-500 text-white font-black shadow-sm"
+                              : "text-slate-300 hover:text-white"
+                          }`}
+                        >
+                          <span>Alternate</span>
+                          {allRecords?.filter(r => (r.version || "current") === "alternate").length > 0 && (
+                            <span className="inline-block w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                          )}
+                        </button>
+                      </div>
+
+                      {archivedVersions.length > 0 && (
+                        <div className="flex items-center gap-2 ml-2">
+                          <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">Archive:</span>
+                          <select
+                            value={selectedVersion.startsWith("archive_") ? selectedVersion : ""}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                onChangeVersion(e.target.value);
+                              }
+                            }}
+                            className={`px-2 py-1 text-[9px] rounded transition-all border outline-none font-bold cursor-pointer min-w-[110px] ${
+                              selectedVersion.startsWith("archive_")
+                                ? "bg-amber-600 text-white border-amber-500 shadow-sm"
+                                : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                            }`}
+                          >
+                            <option value="" className="bg-slate-900 text-slate-400">Select Archive...</option>
+                            {archivedVersions.map(arch => (
+                              <option key={arch.id} value={arch.id} className="bg-slate-900 text-white">
+                                Eff: {arch.effectiveAsOf}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Roster Summary Stats */}
+                  <div className="hidden lg:flex items-center gap-3 border-l border-white/10 pl-6 mx-auto">
+                    <div className="flex flex-col">
+                      <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Personnel Summary</span>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-black text-white">{stats.total}</span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Total</span>
+                        </div>
+                        <div className="w-px h-3 bg-white/10" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-black text-blue-400">{stats.roles[RatingRole.GROUP_LEADER] || 0}</span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Group LDR</span>
+                        </div>
+                        <div className="w-px h-3 bg-white/10" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-black text-amber-400">{stats.roles[RatingRole.SECTION_LEADER] || 0}</span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Section LDR</span>
+                        </div>
+
+                        {/* Sorted Ranks */}
+                        {(() => {
+                          const rankOrder = ["CSM", "SGM", "1SG", "MSG", "SFC", "SSG", "SGT", "CPL", "SPC", "PFC", "PV2", "PV1"];
+                          const sortedRanks = Object.entries(stats.ranks)
+                            .filter(([rk]) => rk && rk.trim())
+                            .sort((a, b) => {
+                              const idxA = rankOrder.indexOf(a[0].toUpperCase());
+                              const idxB = rankOrder.indexOf(b[0].toUpperCase());
+                              if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
+                              if (idxA === -1) return 1;
+                              if (idxB === -1) return -1;
+                              return idxA - idxB;
+                            });
+                          
+                          return sortedRanks.slice(0, 8).map(([rank, count]) => (
+                            <React.Fragment key={rank}>
+                              <div className="w-px h-3 bg-white/10" />
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-black text-slate-200">{count}</span>
+                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{rank}</span>
+                              </div>
+                            </React.Fragment>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Top Right Controls: Zoom + Exit Full Screen */}
+                <div className="flex items-center gap-3 shrink-0 ml-auto">
                   {/* Zoom controls */}
-                  <div className="flex items-center gap-1 bg-slate-800 rounded p-1 border border-slate-700">
+                  <div className="flex items-center gap-1 bg-black/30 rounded-md p-1 border border-white/15 shadow-sm">
                     <button
                       onClick={() => setZoom(Math.max(0.5, zoom - 0.05))}
-                      className="p-1.5 rounded hover:bg-slate-750 text-slate-300 hover:text-slate-100 transition-colors"
+                      className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
                       title="Zoom Out"
                     >
                       <ZoomOut className="w-4 h-4" />
                     </button>
-                    <span className="text-xs font-mono font-bold text-slate-300 px-2 min-w-[3.5rem] text-center">
+                    <span className="text-xs font-mono font-bold text-slate-200 px-2 min-w-[3.5rem] text-center">
                       {Math.round(zoom * 100)}%
                     </span>
                     <button
                       onClick={() => setZoom(Math.min(1.5, zoom + 0.05))}
-                      className="p-1.5 rounded hover:bg-slate-750 text-slate-300 hover:text-slate-100 transition-colors"
+                      className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
                       title="Zoom In"
                     >
                       <ZoomIn className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setZoom(0.95)}
-                      className="p-1.5 rounded hover:bg-slate-750 text-slate-400 hover:text-slate-200 transition-colors ml-1 border-l border-slate-750"
+                      className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-colors ml-0.5 border-l border-white/15"
                       title="Reset Zoom"
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                </div>
 
-                {/* Right Actions */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleExportPPTX}
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
-                  >
-                    <FileDown className="w-3.5 h-3.5" />
-                    EXPORT PPTX
-                  </button>
-                  
+                  {/* Exit Full Screen Button */}
                   <button
                     onClick={exitFullscreen}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+                    className="bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 hover:border-slate-500 px-3.5 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95 shrink-0"
                   >
-                    <Minimize2 className="w-3.5 h-3.5" />
-                    EXIT FULL SCREEN
+                    <Minimize2 className="w-4 h-4 text-rose-400" />
+                    <span>EXIT</span>
                   </button>
+                </div>
+              </div>
+            )}
+
+            {isFullscreen && selectedVersion?.startsWith("archive_") && (
+              <div className="bg-amber-600 text-white font-bold px-6 py-2.5 flex items-center justify-between gap-3 text-xs shadow-md shrink-0 select-none border-b border-amber-700">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-white shrink-0 animate-pulse" />
+                  <span>
+                    <strong>WARNING:</strong> You are viewing a read-only historical copy of this roster (Effective: {archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"}). Adjustments are locked.
+                  </span>
+                </div>
+                <div className="text-[9px] bg-amber-950 text-amber-200 font-extrabold uppercase px-2 py-0.5 rounded tracking-widest shrink-0">
+                  READ-ONLY HISTORICAL VIEW
                 </div>
               </div>
             )}
@@ -1006,14 +1183,33 @@ export default function OrgChartPreview({
             return (
               <div className={`w-80 border-l border-slate-800 bg-slate-900 flex flex-col justify-between shrink-0 animate-in slide-in-from-right duration-200 text-slate-200 z-10 shadow-2xl ${!isFullscreen ? "h-full" : ""}`}>
                 <div className="p-4 space-y-4 overflow-y-auto">
-                  <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                    <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">Active Soldier</span>
-                    <button 
-                      onClick={() => setSelectedNode(null)}
-                      className="text-slate-400 hover:text-slate-250 text-xs font-semibold"
+                  <div className="flex flex-col gap-2 border-b border-slate-800 pb-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                        <User className="w-3 h-3 text-blue-400" />
+                        <span>Inspect Profile</span>
+                      </span>
+                      <button 
+                        onClick={() => setSelectedNode(null)}
+                        className="text-slate-400 hover:text-slate-100 hover:bg-slate-800 px-2 py-0.5 rounded text-xs font-bold transition-colors"
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <select
+                      value={selectedNode.id}
+                      onChange={(e) => {
+                        const rec = records.find(r => r.id === e.target.value);
+                        if (rec) setSelectedNode(rec);
+                      }}
+                      className="w-full bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded px-2.5 py-1.5 outline-none focus:border-blue-500 cursor-pointer shadow-sm"
                     >
-                      Close
-                    </button>
+                      {records.map(r => (
+                        <option key={r.id} value={r.id} className="bg-slate-900 text-white">
+                          {r.rank} {r.name} — {r.role}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="space-y-3">
@@ -1081,87 +1277,107 @@ export default function OrgChartPreview({
                     )}
 
                     {seniorNcoNotRating && (
-                      <div className="p-3 bg-rose-950/80 border border-rose-500/80 rounded-md text-xs text-rose-200 space-y-1.5 shadow-md">
-                        <div className="flex items-center gap-1.5 font-bold text-rose-300">
-                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
-                          <span>Senior NCO Not Rating Anyone</span>
+                      <div className="p-3 bg-amber-950/60 border border-amber-600/50 rounded-md text-xs text-amber-200 space-y-1 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                          <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Rating Logic Alert</span>
                         </div>
-                        <p className="text-[11px] leading-relaxed text-rose-250/95 font-medium">
-                          As a {selectedNode.rank}, this Senior NCO is expected to be assigned as a rater in this rating scheme. Currently, they are not rating any Soldier.
+                        <p className="text-[11px]">
+                          MSG/SGM <strong className="text-white">{selectedNode.name}</strong> is currently a <strong className="text-white">Rated Soldier</strong>. 
+                          Usually, these ranks serve as Raters or Senior Raters for junior personnel.
                         </p>
                       </div>
                     )}
 
-                    {(twoRanksAboveRater || sameRankRater) && (
-                      <div className="p-3 bg-rose-950/80 border border-rose-500/80 rounded-md text-xs text-rose-200 space-y-1.5 shadow-md">
-                        <div className="flex items-center gap-1.5 font-bold text-rose-300">
-                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
-                          <span>Rater Rank Discrepancy</span>
+                    {twoRanksAboveRater && (
+                      <div className="p-3 bg-amber-950/60 border border-amber-600/50 rounded-md text-xs text-amber-200 space-y-1 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                          <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Rank Structure Alert</span>
                         </div>
-                        <p className="text-[11px] leading-relaxed text-rose-250/95 font-medium">
-                          {twoRanksAboveRater || sameRankRater}
+                        <p className="text-[11px]">
+                          Rater <strong className="text-white">{twoRanksAboveRater.raterName}</strong> ({twoRanksAboveRater.raterRank}) is 2+ ranks above <strong className="text-white">{selectedNode.name}</strong> ({selectedNode.rank}).
+                          <br /><span className="text-[10px] opacity-80 mt-1 block italic">Policy prefers the immediate supervisor as Rater.</span>
                         </p>
                       </div>
                     )}
 
-                    {/* Assigned Hierarchy */}
-                    <div className="space-y-2 pt-3 border-t border-slate-800">
-                      <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Assigned Hierarchy</h5>
-                      
-                      <div className={`p-2.5 bg-slate-850 border-l-4 border-emerald-500 rounded text-xs transition-all ${isRaterDiff ? "ring-1 ring-yellow-400 bg-yellow-400/5" : ""}`}>
-                        <div className="flex justify-between items-center">
-                          <div className="text-slate-400 font-bold uppercase text-[8px]">Rater (Direct)</div>
-                          {isRaterDiff && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
+                    {sameRankRater && (
+                      <div className="p-3 bg-amber-950/60 border border-amber-600/50 rounded-md text-xs text-amber-200 space-y-1 shadow-md">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                          <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Same Rank Alert</span>
                         </div>
-                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.raterId)}</div>
-                        {selectedNode.raterEffectiveDate && (
-                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.raterEffectiveDate}</div>
-                        )}
+                        <p className="text-[11px]">
+                          Rater <strong className="text-white">{sameRankRater.raterName}</strong> and <strong className="text-white">{selectedNode.name}</strong> are both rank <strong className="text-white">{selectedNode.rank}</strong>.
+                          <br /><span className="text-[10px] opacity-80 mt-1 block italic">Raters should normally be senior to the rated soldier.</span>
+                        </p>
                       </div>
+                    )}
+                  </div>
 
-                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 transition-all ${seniorRaterMismatch ? "border-rose-500 bg-rose-950/30 ring-1 ring-rose-500/50" : "border-indigo-500"} ${isSeniorRaterDiff ? "ring-2 ring-yellow-400 ring-inset bg-yellow-400/5" : ""}`}>
-                        <div className="flex justify-between items-center">
-                          <div className="text-slate-400 font-bold uppercase text-[8px]">Senior Rater</div>
-                          {isSeniorRaterDiff && !seniorRaterMismatch && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
-                          {seniorRaterMismatch && <span className="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Mismatch</span>}
-                        </div>
-                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.seniorRaterId)}</div>
-                        {selectedNode.seniorRaterEffectiveDate && (
-                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.seniorRaterEffectiveDate}</div>
-                        )}
-                        {seniorRaterMismatch && (
-                          <div className="text-[10px] text-rose-300 font-semibold mt-1 bg-rose-900/60 p-1 rounded border border-rose-800">
-                            Expected: {seniorRaterMismatch.expectedName}
+                  <div className="pt-4 border-t border-slate-800 space-y-3">
+                    <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Assigned Rating Chain</h5>
+                    <div className="grid grid-cols-1 gap-2">
+                      {/* Rater */}
+                      {(() => {
+                        const raterName = getRaterName(selectedNode.raterId);
+                        return (
+                          <div className={`p-2.5 rounded border transition-all flex items-center gap-3 ${isRaterDiff ? "bg-yellow-400/10 border-yellow-500/50" : "bg-slate-850/80 border-slate-700"}`}>
+                            <div className="w-1.5 self-stretch rounded-full bg-emerald-500" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center">
+                                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Rater</div>
+                                {selectedNode.raterEffectiveDate && (
+                                  <div className="text-[9px] text-slate-500 font-mono">Eff: {selectedNode.raterEffectiveDate}</div>
+                                )}
+                              </div>
+                              <div className="text-xs font-bold text-slate-200 truncate mt-0.5">{raterName}</div>
+                            </div>
+                            {isRaterDiff && <span className="text-[8px] font-black text-yellow-500 uppercase">Change</span>}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
 
-                      <div className={`p-2.5 bg-slate-850 rounded text-xs border-l-4 transition-all ${reviewerMismatch ? "border-purple-500 bg-purple-950/30 ring-1 ring-purple-500/50" : "border-slate-400"} ${isReviewerDiff ? "ring-2 ring-yellow-400 ring-inset bg-yellow-400/5" : ""}`}>
-                        <div className="flex justify-between items-center">
-                          <div className="text-slate-400 font-bold uppercase text-[8px]">Reviewer</div>
-                          {isReviewerDiff && !reviewerMismatch && <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Projected Change</span>}
-                          {reviewerMismatch && <span className="text-[9px] text-purple-400 font-bold uppercase tracking-wider">Required</span>}
-                        </div>
-                        <div className="font-bold text-slate-200 mt-0.5">{getRaterName(selectedNode.reviewerId)}</div>
-                        {selectedNode.reviewerEffectiveDate && (
-                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">Eff: {selectedNode.reviewerEffectiveDate}</div>
-                        )}
-                        {reviewerMismatch && (
-                          <div className="text-[10px] text-purple-300 font-semibold mt-1 bg-purple-900/60 p-1 rounded border border-purple-800">
-                            Expected: {reviewerMismatch.expectedName}
+                      {/* Senior Rater */}
+                      {(() => {
+                        const srName = getRaterName(selectedNode.seniorRaterId);
+                        return (
+                          <div className={`p-2.5 rounded border transition-all flex items-center gap-3 ${isSeniorRaterDiff ? "bg-yellow-400/10 border-yellow-500/50" : "bg-slate-850/80 border-slate-700"}`}>
+                            <div className="w-1.5 self-stretch rounded-full bg-purple-500" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center">
+                                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Senior Rater</div>
+                                {selectedNode.seniorRaterEffectiveDate && (
+                                  <div className="text-[9px] text-slate-500 font-mono">Eff: {selectedNode.seniorRaterEffectiveDate}</div>
+                                )}
+                              </div>
+                              <div className="text-xs font-bold text-slate-200 truncate mt-0.5">{srName}</div>
+                            </div>
+                            {isSeniorRaterDiff && <span className="text-[8px] font-black text-yellow-500 uppercase">Change</span>}
                           </div>
-                        )}
-                      </div>
-                    </div>
+                        );
+                      })()}
 
-                    {/* Interactions Guide (Added to consolidated panel) */}
-                    <div className="border-t border-slate-800 pt-3 space-y-2">
-                      <span className="font-bold text-slate-400 uppercase text-[9px] tracking-widest">Guide:</span>
-                      <ul className="list-disc pl-4 space-y-1 text-[10px] text-slate-500 leading-relaxed">
-                        <li>Hover cards to highlight rater network.</li>
-                        <li>Hold Ctrl/Cmd + scroll wheel to zoom.</li>
-                        <li>Drag the canvas to pan view.</li>
-                      </ul>
+                      {/* Reviewer */}
+                      {(() => {
+                        const revName = getRaterName(selectedNode.reviewerId);
+                        return (
+                          <div className={`p-2.5 rounded border transition-all flex items-center gap-3 ${isReviewerDiff ? "bg-yellow-400/10 border-yellow-500/50" : "bg-slate-850/80 border-slate-700"}`}>
+                            <div className="w-1.5 self-stretch rounded-full bg-slate-500" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center">
+                                <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">SGM Reviewer</div>
+                                {selectedNode.reviewerEffectiveDate && (
+                                  <div className="text-[9px] text-slate-500 font-mono">Eff: {selectedNode.reviewerEffectiveDate}</div>
+                                )}
+                              </div>
+                              <div className="text-xs font-bold text-slate-200 truncate mt-0.5">{revName}</div>
+                            </div>
+                            {isReviewerDiff && <span className="text-[8px] font-black text-yellow-500 uppercase">Change</span>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1194,11 +1410,9 @@ export default function OrgChartPreview({
               </div>
             );
           })()}
-
-        </div>
-          
         </div>
       </div>
+    </div>
   </div>
 );
 }

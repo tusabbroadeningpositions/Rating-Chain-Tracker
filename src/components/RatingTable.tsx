@@ -2723,27 +2723,44 @@ export default function RatingTable({
       </div>
 
       {mismatchCount > 0 && (
-        <button
-          onClick={() => setShowOnlyDiscrepancies(!showOnlyDiscrepancies)}
-          className={`w-full text-left bg-amber-50 border ${
-            showOnlyDiscrepancies ? "border-amber-500 ring-1 ring-amber-500" : "border-amber-200 hover:border-amber-300"
-          } rounded px-3 py-1.5 text-amber-800 text-xs flex items-center justify-between gap-2 shadow-xs transition-all cursor-pointer`}
-        >
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-            <span>
-              <strong className="font-semibold text-amber-900">{mismatchCount} rating chain discrepancy{mismatchCount === 1 ? "" : "ies"}</strong> found.
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setShowOnlyDiscrepancies(!showOnlyDiscrepancies)}
+            className={`group inline-flex items-center justify-between gap-3 px-3.5 py-1.5 rounded-md border text-xs transition-all shadow-xs cursor-pointer ${
+              showOnlyDiscrepancies
+                ? "bg-rose-100 border-rose-500 ring-2 ring-rose-500/30 text-rose-950 font-medium"
+                : "bg-rose-50 border-rose-200 hover:bg-rose-100/80 hover:border-rose-300 text-rose-900"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${showOnlyDiscrepancies ? "text-rose-600 animate-pulse" : "text-rose-500"}`} />
+              <span>
+                <strong className="font-extrabold text-rose-900">{mismatchCount} rating chain discrepancy{mismatchCount === 1 ? "" : "ies"}</strong> found.
+              </span>
               {showOnlyDiscrepancies && (
-                <span className="ml-2 font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide">
-                  FILTERING ACTIVE
+                <span className="ml-1 font-black text-rose-800 bg-rose-200/80 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider border border-rose-300">
+                  Filtering Active
                 </span>
               )}
-            </span>
-          </div>
-          <span className="text-[10px] font-bold uppercase text-amber-600 hover:text-amber-800">
-            {showOnlyDiscrepancies ? "Show All Records" : "Click to Filter Discrepancies Only"}
-          </span>
-        </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-rose-200">
+              {showOnlyDiscrepancies ? (
+                <span className="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider shadow-xs transition-colors">
+                  <X className="w-3 h-3 stroke-[3]" />
+                  <span>Clear Filter</span>
+                  <span className="text-[9px] opacity-80 font-normal hidden sm:inline">(Show All)</span>
+                </span>
+              ) : (
+                <span className="text-[10px] font-extrabold uppercase text-rose-700 group-hover:text-rose-900 flex items-center gap-1">
+                  <span>Filter Discrepancies</span>
+                  <span className="text-xs transition-transform group-hover:translate-x-0.5">→</span>
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
       )}
 
       {/* Spreadsheet List Container */}
@@ -2999,7 +3016,26 @@ export default function RatingTable({
                       }`}>
                         <div className="flex flex-col">
                           <div className="flex items-center justify-between gap-1">
-                            <span className="leading-tight">{r.name}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="leading-tight">{r.name}</span>
+                              {(() => {
+                                const noteCount = allNotes.filter(n => n.soldierName === r.name.trim().toLowerCase()).length;
+                                if (noteCount === 0) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveNoteSoldierName(r.name);
+                                    }}
+                                    className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer shadow-xs shrink-0"
+                                    title={`${noteCount} note${noteCount === 1 ? "" : "s"} present — click to view`}
+                                  >
+                                    {noteCount}
+                                  </button>
+                                );
+                              })()}
+                            </div>
                             {isSeniorNcoNotRating(r) && (
                               <div className="relative group/tooltip flex-shrink-0">
                                 <AlertTriangle className="w-3.5 h-3.5 text-rose-500 animate-pulse cursor-help" />
@@ -3026,6 +3062,15 @@ export default function RatingTable({
                             >
                               <HistoryIcon className="w-2.5 h-2.5" />
                               {selectedVersion === "current" ? "Projected / Notes" : "View Current"}
+                              {(() => {
+                                const noteCount = allNotes.filter(n => n.soldierName === r.name.trim().toLowerCase()).length;
+                                if (noteCount === 0) return null;
+                                return (
+                                  <span className="ml-0.5 px-1 bg-rose-600 text-white rounded-full text-[8px] font-black leading-tight">
+                                    {noteCount}
+                                  </span>
+                                );
+                              })()}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                             </button>
                           )}

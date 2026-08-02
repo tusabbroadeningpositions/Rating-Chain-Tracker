@@ -951,7 +951,7 @@ export default function App() {
 
       {/* Workspace Indicator for Guest or Shared Users */}
       {(isAnonymous || sharedScheme) && (
-        <div className={`${sharedScheme ? "bg-slate-800 border-slate-700 text-slate-100" : "bg-amber-50 border-amber-250 text-slate-900"} border-b py-2 px-4 print:hidden transition-colors`}>
+        <div className={`workspace-indicator ${sharedScheme ? "bg-slate-800 border-slate-700 text-slate-100" : "bg-amber-50 border-amber-250 text-slate-900"} border-b py-2 px-4 print:hidden transition-colors`}>
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className={`flex items-center gap-2 text-xs ${sharedScheme ? "text-slate-200" : "text-amber-900"} font-medium`}>
               {sharedScheme ? <Globe className="w-4 h-4 text-emerald-400" /> : <HelpCircle className="w-4 h-4 text-amber-600" />}
@@ -1436,6 +1436,9 @@ export default function App() {
                       ? currentScheme?.proposedEffectiveDateAlternate || ""
                       : ""
                   }
+                  schemes={schemes}
+                  activeSchemeId={activeSchemeId || undefined}
+                  onSelectScheme={setActiveSchemeId}
                 />
               )}
 
