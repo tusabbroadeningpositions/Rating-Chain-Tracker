@@ -5,7 +5,9 @@
 - **Ownership Consistency**: A `RatingScheme` document has a `userId`. Only this `userId` (owner) can modify or delete the scheme.
 - **Derived Authorization**: Access to any `ArmyRatingRecord` document is strictly derived from its parent `RatingScheme` referenced by `schemeId`.
   - **Shared Reading**: If `schemes/{schemeId}.isShared` is `true`, any user (even unauthenticated/anonymous or guest) can read the records in that scheme.
-  - **Shared Writing**: If `schemes/{schemeId}.isShared` is `true` AND `schemes/{schemeId}.allowEdit` is `true`, any authenticated user can write, update, or delete records in that scheme.
+  - **Shared Writing**: If `schemes/{schemeId}.isShared` is `true` AND `schemes/{schemeId}.allowEdit` is `true`, any authenticated user can write, update, or delete records in that scheme, subject to the version scope constraint:
+    - By default (if `schemes/{schemeId}.allowEditCurrent` is `false` or unset), shared editors can ONLY edit records where `version` is `future` or `alternate` (the projected and alternate rosters).
+    - If `schemes/{schemeId}.allowEditCurrent` is `true`, shared editors can edit all records regardless of version (including the current roster).
   - **Private Control**: If `schemes/{schemeId}.isShared` is `false` or does not exist, only the scheme owner (`userId`) can read, write, update, or delete records.
 - **Immutability of Key Identifiers**: Key identifiers such as `id`, `schemeId`, and `userId` must remain immutable once created on a record.
 - **Server-Side Timestamps**: Timestamp fields `createdAt` and `updatedAt` must be validated using the server-provided `request.time`.

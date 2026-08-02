@@ -31,11 +31,14 @@ import {
   duplicateScheme,
   createDefaultScheme,
   toggleSchemeEdit,
+  toggleSchemeEditCurrent,
   copyVersion,
+  archiveCurrentVersion,
+  deleteArchive,
   updateSchemeDates,
   updateHistoryRecord
 } from "./lib/firebaseService";
-import { Share2, Link, Globe, Lock, CheckCircle2 } from "lucide-react";
+import { Share2, Link, Globe, Lock, CheckCircle2, History as HistoryIcon } from "lucide-react";
 
 const STORAGE_KEY = "army_rating_scheme_records";
 const ACTIVE_SCHEME_KEY = "army_rating_active_scheme_id";
@@ -57,7 +60,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [sharedScheme, setSharedScheme] = useState<RatingScheme | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<"current" | "future" | "alternate">("current");
+  const [selectedVersion, setSelectedVersion] = useState<string>("current");
 
   // Safety fallback for loading state
   useEffect(() => {
@@ -278,11 +281,15 @@ export default function App() {
   const isSharedView = !!sharedScheme;
 
   // Helper to determine if a specific version is editable
-  const canEditVersion = (version: "current" | "future" | "alternate") => {
+  const canEditVersion = (version: string) => {
+    if (version.startsWith("archive_")) return false; // Archives are strictly read-only
     if (!activeSchemeId) return true; // Guest mode - local storage only is always editable
     if (isOwner) return true; // Owner can edit all versions
     if (currentScheme?.isShared && currentScheme?.allowEdit) {
-      // Shared link editors can only edit future and alternate rosters
+      if (currentScheme?.allowEditCurrent) {
+        return true; // Shared link editors can edit all versions including current
+      }
+      // Otherwise, shared link editors can only edit future and alternate rosters
       return version === "future" || version === "alternate";
     }
     return false;
@@ -292,7 +299,7 @@ export default function App() {
   const canEdit = !activeSchemeId || isOwner || !!(currentScheme?.isShared && currentScheme?.allowEdit);
 
   const handleCopyVersion = async (
-    fromVer: "current" | "future" | "alternate",
+    fromVer: "current" | "future" | "alternate" | string,
     toVer: "current" | "future" | "alternate"
   ) => {
     const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
@@ -300,7 +307,31 @@ export default function App() {
     if (activeSchemeId && canEditVersion(toVer)) {
       setIsLoading(true);
       try {
+        let proposedDateToUse = "";
+        if (toVer === "current") {
+          if (fromVer === "future") {
+            proposedDateToUse = currentScheme?.proposedEffectiveDateFuture || "";
+          } else if (fromVer === "alternate") {
+            proposedDateToUse = currentScheme?.proposedEffectiveDateAlternate || "";
+          } else if (fromVer.startsWith("archive_")) {
+            const parts = fromVer.split("_");
+            proposedDateToUse = parts[1] || "";
+          }
+        }
+
+        if (toVer === "current") {
+          // Archive the current version first
+          await archiveCurrentVersion(
+            currentScheme?.userId || user?.uid || "guest",
+            activeSchemeId,
+            currentScheme?.effectiveAsOf || ""
+          );
+        }
         await copyVersion(currentScheme?.userId || user?.uid || "guest", activeSchemeId, fromVer, toVer);
+
+        if (toVer === "current" && proposedDateToUse) {
+          await updateSchemeDates(activeSchemeId, { effectiveAsOf: proposedDateToUse });
+        }
       } catch (error) {
         console.error("Error copying version:", error);
       } finally {
@@ -308,7 +339,24 @@ export default function App() {
       }
     } else if (!activeSchemeId) {
       // Guest mode
-      const sourceRecords = records.filter(r => (r.version || "current") === fromVer);
+      let updated = [...records];
+      
+      if (toVer === "current") {
+        // Archive current records first
+        const currentRecords = records.filter(r => (r.version || "current") === "current");
+        if (currentRecords.length > 0) {
+          const archiveDate = currentScheme?.effectiveAsOf || new Date().toISOString().split('T')[0];
+          const archiveId = `archive_${archiveDate}_${Date.now()}`;
+          const archiveCloned: ArmyRatingRecord[] = currentRecords.map(r => ({
+            ...r,
+            id: `record_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`,
+            version: archiveId
+          }));
+          updated = [...updated, ...archiveCloned];
+        }
+      }
+
+      const sourceRecords = updated.filter(r => (r.version || "current") === fromVer);
       
       const idMap: { [oldId: string]: string } = {};
       sourceRecords.forEach(r => {
@@ -324,10 +372,33 @@ export default function App() {
         version: toVer
       }));
       
-      const remaining = records.filter(r => (r.version || "current") !== toVer);
-      const updated = [...remaining, ...cloned];
-      setRecords(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      const remaining = updated.filter(r => (r.version || "current") !== toVer);
+      const finalUpdated = [...remaining, ...cloned];
+      setRecords(finalUpdated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalUpdated));
+    }
+  };
+
+  const handleDeleteArchive = async (archiveId: string) => {
+    if (activeSchemeId) {
+      setIsLoading(true);
+      try {
+        const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
+        await deleteArchive(
+          currentScheme?.userId || user?.uid || "guest",
+          activeSchemeId,
+          archiveId
+        );
+      } catch (error) {
+        console.error("Error deleting archive:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Guest mode
+      const finalUpdated = records.filter(r => r.version !== archiveId);
+      setRecords(finalUpdated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(finalUpdated));
     }
   };
 
@@ -667,6 +738,28 @@ export default function App() {
     setIsFormOpen(false);
   };
 
+  // Get unique archived versions
+  const archivedVersions = React.useMemo(() => {
+    const versions = new Set<string>();
+    records.forEach(r => {
+      if (r.version && r.version.startsWith("archive_")) {
+        versions.add(r.version);
+      }
+    });
+    return Array.from(versions).map(ver => {
+      const parts = ver.split("_");
+      const datePart = parts[1] || "Not Set";
+      const timestampPart = parseInt(parts[2] || "0", 10);
+      const archivedAt = timestampPart ? new Date(timestampPart).toLocaleString() : "Unknown Date";
+      return {
+        id: ver,
+        effectiveAsOf: datePart,
+        archivedAt,
+        timestamp: timestampPart
+      };
+    }).sort((a, b) => b.timestamp - a.timestamp);
+  }, [records]);
+
   // Filter records based on selected version
   const filteredRecords = records.filter(r => (r.version || "current") === selectedVersion);
 
@@ -757,17 +850,38 @@ export default function App() {
                   </button>
                 )}
                 {isOwner && currentScheme?.isShared && (
-                  <label className="flex items-center gap-1.5 text-[9px] font-bold text-slate-300 cursor-pointer border-l border-slate-700 pl-2 ml-1.5 select-none hover:text-white transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={!!currentScheme?.allowEdit}
-                      onChange={async (e) => {
-                        await toggleSchemeEdit(activeSchemeId, e.target.checked);
-                      }}
-                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0 w-3 h-3 cursor-pointer"
-                    />
-                    <span>ALLOW PUBLIC EDIT</span>
-                  </label>
+                  <div className="flex items-center gap-2 border-l border-slate-700 pl-2 ml-1.5 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-[9px] font-bold text-slate-300 cursor-pointer select-none hover:text-white transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={!!currentScheme?.allowEdit}
+                        onChange={async (e) => {
+                          await toggleSchemeEdit(activeSchemeId, e.target.checked);
+                          if (!e.target.checked) {
+                            await toggleSchemeEditCurrent(activeSchemeId, false);
+                          }
+                        }}
+                        className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0 w-3 h-3 cursor-pointer"
+                      />
+                      <span>ALLOW PUBLIC EDIT</span>
+                    </label>
+
+                    {currentScheme?.allowEdit && (
+                      <div className="flex items-center gap-1 border-l border-slate-700/50 pl-2 ml-1">
+                        <span className="text-[8px] text-slate-500 font-bold uppercase">SCOPE:</span>
+                        <select
+                          value={currentScheme?.allowEditCurrent ? "all" : "projected"}
+                          onChange={async (e) => {
+                            await toggleSchemeEditCurrent(activeSchemeId, e.target.value === "all");
+                          }}
+                          className="bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-[9px] font-bold text-slate-100 focus:ring-0 focus:outline-none cursor-pointer"
+                        >
+                          <option value="projected">PROJECTED & ALTERNATE ONLY</option>
+                          <option value="all">ALL ROSTERS (INCL. CURRENT)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -845,7 +959,7 @@ export default function App() {
                 <>
                   Collaborative Workspace: <strong className="text-white font-bold">{sharedScheme.name}</strong>. You have{" "}
                   <span className={`px-1.5 py-0.5 text-[10px] rounded font-bold uppercase ${sharedScheme.allowEdit ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border border-amber-500/30"}`}>
-                    {sharedScheme.allowEdit ? "Editor Access" : "View-Only Access"}
+                    {sharedScheme.allowEdit ? (sharedScheme.allowEditCurrent ? "Full Editor Access" : "Projected & Alternate Editor Access") : "View-Only Access"}
                   </span>{" "}
                   to this live shared rating scheme.
                 </>
@@ -988,45 +1102,79 @@ export default function App() {
                       Proposed: {currentScheme?.proposedEffectiveDateAlternate || "Not Set"}
                     </span>
                   )}
+                  {selectedVersion.startsWith("archive_") && (
+                    <span className="text-xs sm:text-sm font-black text-slate-700 bg-slate-100 border border-slate-300 px-2.5 py-1 rounded-md font-mono ml-2 uppercase">
+                      Archived (Effective: {archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"})
+                    </span>
+                  )}
                 </span>
                 
-                <div className="inline-flex rounded-md bg-slate-100 p-1 font-medium border border-slate-200">
-                  <button
-                    onClick={() => setSelectedVersion("current")}
-                    className={`px-3 py-1 text-xs rounded transition-all ${
-                      selectedVersion === "current"
-                        ? "bg-[#1e293b] text-white font-bold shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Current
-                  </button>
-                  <button
-                    onClick={() => setSelectedVersion("future")}
-                    className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
-                      selectedVersion === "future"
-                        ? "bg-sky-600 text-white font-bold shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Projected
-                    {records.filter(r => r.version === "future").length > 0 && (
-                      <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setSelectedVersion("alternate")}
-                    className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
-                      selectedVersion === "alternate"
-                        ? "bg-emerald-600 text-white font-bold shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    Alternate
-                    {records.filter(r => r.version === "alternate").length > 0 && (
-                      <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full" />
-                    )}
-                  </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-md bg-slate-100 p-1 font-medium border border-slate-200">
+                    <button
+                      onClick={() => setSelectedVersion("current")}
+                      className={`px-3 py-1 text-xs rounded transition-all ${
+                        selectedVersion === "current"
+                          ? "bg-[#1e293b] text-white font-bold shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Current
+                    </button>
+                    <button
+                      onClick={() => setSelectedVersion("future")}
+                      className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
+                        selectedVersion === "future"
+                          ? "bg-sky-600 text-white font-bold shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Projected
+                      {records.filter(r => r.version === "future").length > 0 && (
+                        <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setSelectedVersion("alternate")}
+                      className={`px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
+                        selectedVersion === "alternate"
+                          ? "bg-emerald-600 text-white font-bold shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Alternate
+                      {records.filter(r => r.version === "alternate").length > 0 && (
+                        <span className="inline-block w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                      )}
+                    </button>
+                  </div>
+
+                  {archivedVersions.length > 0 && (
+                    <div className="relative inline-block">
+                      <select
+                        value={selectedVersion.startsWith("archive_") ? selectedVersion : ""}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSelectedVersion(e.target.value);
+                          } else {
+                            setSelectedVersion("current");
+                          }
+                        }}
+                        className={`px-2 py-1 text-xs rounded transition-all border outline-none font-bold cursor-pointer ${
+                          selectedVersion.startsWith("archive_")
+                            ? "bg-slate-800 text-white border-slate-700 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900 border-slate-200 bg-slate-50"
+                        }`}
+                      >
+                        <option value="">📁 Archives ({archivedVersions.length})</option>
+                        {archivedVersions.map(arch => (
+                          <option key={arch.id} value={arch.id}>
+                            Eff: {arch.effectiveAsOf} (Archived: {new Date(arch.timestamp).toLocaleDateString()})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1096,6 +1244,122 @@ export default function App() {
                       Copy Projected Version
                     </button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {selectedVersion.startsWith("archive_") && (
+              <div className="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg p-4 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in print:hidden">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-slate-700/60 rounded border border-slate-600/50 flex-shrink-0">
+                    <HistoryIcon className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div className="text-xs">
+                    <span className="font-black text-amber-400 uppercase tracking-wider text-[10px] block mb-1">
+                      Historical Archive (Read-Only)
+                    </span>
+                    <span className="text-slate-300">
+                      This roster was archived on{" "}
+                      <strong className="text-white font-mono">
+                        {archivedVersions.find(v => v.id === selectedVersion)?.archivedAt || "Unknown Date"}
+                      </strong>{" "}
+                      and was effective as of{" "}
+                      <strong className="text-white font-mono bg-slate-700 px-1.5 py-0.5 rounded">
+                        {archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"}
+                      </strong>.
+                    </span>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      Editing is locked. Reinstate this archive below to resume editing as a current or draft version.
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2.5 flex-wrap self-end md:self-auto">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    REINSTATE AS:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setConfirmConfig({
+                          isOpen: true,
+                          title: "Reinstate as Active CURRENT Version",
+                          message: `This will put your active current roster into the archive, and overwrite the CURRENT roster with a complete copy of this archive (Effective: ${archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"}). Are you sure you want to proceed?`,
+                          confirmLabel: "REINSTATE TO CURRENT",
+                          cancelLabel: "CANCEL",
+                          variant: "warning",
+                          onConfirm: async () => {
+                            await handleCopyVersion(selectedVersion, "current");
+                            setSelectedVersion("current");
+                          }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-wider cursor-pointer"
+                    >
+                      Current
+                    </button>
+                    <button
+                      onClick={() => {
+                        setConfirmConfig({
+                          isOpen: true,
+                          title: "Reinstate as PROJECTED Draft Version",
+                          message: `This will overwrite your existing PROJECTED draft version with a complete copy of this archived roster. Are you sure you want to proceed?`,
+                          confirmLabel: "REINSTATE TO PROJECTED",
+                          cancelLabel: "CANCEL",
+                          variant: "warning",
+                          onConfirm: async () => {
+                            await handleCopyVersion(selectedVersion, "future");
+                            setSelectedVersion("future");
+                          }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-wider cursor-pointer"
+                    >
+                      Projected
+                    </button>
+                    <button
+                      onClick={() => {
+                        setConfirmConfig({
+                          isOpen: true,
+                          title: "Reinstate as ALTERNATE Draft Version",
+                          message: `This will overwrite your existing ALTERNATE draft version with a complete copy of this archived roster. Are you sure you want to proceed?`,
+                          confirmLabel: "REINSTATE TO ALTERNATE",
+                          cancelLabel: "CANCEL",
+                          variant: "warning",
+                          onConfirm: async () => {
+                            await handleCopyVersion(selectedVersion, "alternate");
+                            setSelectedVersion("alternate");
+                          }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-wider cursor-pointer"
+                    >
+                      Alternate
+                    </button>
+
+                    <div className="h-4 w-[1px] bg-slate-700 mx-1.5 hidden sm:block"></div>
+
+                    <button
+                      onClick={() => {
+                        setConfirmConfig({
+                          isOpen: true,
+                          title: "Delete Historical Archive",
+                          message: `Are you sure you want to permanently delete this historical archive (Effective: ${archivedVersions.find(v => v.id === selectedVersion)?.effectiveAsOf || "Not Set"})? This action is permanent and cannot be undone.`,
+                          confirmLabel: "DELETE PERMANENTLY",
+                          cancelLabel: "CANCEL",
+                          variant: "danger",
+                          onConfirm: async () => {
+                            await handleDeleteArchive(selectedVersion);
+                            setSelectedVersion("current");
+                          }
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white text-[10px] font-black rounded shadow-sm hover:shadow transition-all uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

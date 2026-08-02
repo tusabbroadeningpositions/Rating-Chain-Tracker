@@ -25,6 +25,7 @@ export interface RatingScheme {
   updatedAt: number;
   isShared?: boolean;
   allowEdit?: boolean;
+  allowEditCurrent?: boolean;
   effectiveAsOf?: string;
   proposedEffectiveDateFuture?: string;
   proposedEffectiveDateAlternate?: string;
@@ -52,7 +53,7 @@ export interface ArmyRatingRecord {
   corEffectiveDate?: string; // Effective Date for Change of Rater (YYYY-MM-DD)
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
   keyLeaderTitle?: string; // Custom title for key leader positions
-  version?: "current" | "future" | "alternate"; // Version profile draft
+  version?: "current" | "future" | "alternate" | string; // Version profile draft
   ncoerStatus?: string; // NCOER Status
   ncoerStatusDate?: string; // NCOER Status change date/timestamp (YYYY-MM-DD)
   isLateMode?: boolean; // Flag if record is in 'Late' mode for NCOER

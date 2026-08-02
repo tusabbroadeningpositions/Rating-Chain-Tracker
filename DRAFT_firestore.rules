@@ -33,38 +33,67 @@ service cloud.firestore {
 
     function isValidRatingScheme(data) {
       return data.keys().hasAll(['id', 'name', 'userId']) &&
-             data.keys().size() <= 7 &&
+             data.keys().size() <= 16 &&
              data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
              data.userId is string && data.userId.size() <= 128 &&
              (!data.keys().hasAny(['isShared']) || data.isShared is bool) &&
              (!data.keys().hasAny(['allowEdit']) || data.allowEdit is bool) &&
+             (!data.keys().hasAny(['allowEditCurrent']) || data.allowEditCurrent is bool) &&
+             (!data.keys().hasAny(['effectiveAsOf']) || data.effectiveAsOf is string && data.effectiveAsOf.size() <= 100) &&
+             (!data.keys().hasAny(['proposedEffectiveDateFuture']) || data.proposedEffectiveDateFuture is string && data.proposedEffectiveDateFuture.size() <= 100) &&
+             (!data.keys().hasAny(['proposedEffectiveDateAlternate']) || data.proposedEffectiveDateAlternate is string && data.proposedEffectiveDateAlternate.size() <= 100) &&
              (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp || data.createdAt == null) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
     function isValidArmyRatingRecord(data) {
       return data.keys().hasAll(['id', 'schemeId', 'userId', 'element', 'rank', 'name', 'role']) &&
-             data.keys().size() <= 21 &&
+             data.keys().size() <= 35 &&
              data.id is string && data.id.size() <= 128 &&
              data.schemeId is string && data.schemeId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
-             data.element is string && data.element.size() <= 100 &&
-             data.rank is string && data.rank.size() <= 50 &&
-             data.name is string && data.name.size() <= 150 &&
-             data.role is string && data.role.size() <= 150 &&
-             (!data.keys().hasAny(['dutyMosc']) || (data.dutyMosc is string && data.dutyMosc.size() <= 50)) &&
-             (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 20)) &&
-             (!data.keys().hasAny(['thru']) || (data.thru is string && data.thru.size() <= 20)) &&
-             (!data.keys().hasAny(['dueHqda']) || (data.dueHqda is string && data.dueHqda.size() <= 20)) &&
-             (!data.keys().hasAny(['raterId']) || (data.raterId is string && data.raterId.size() <= 128)) &&
-             (!data.keys().hasAny(['raterEffectiveDate']) || (data.raterEffectiveDate is string && data.raterEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['seniorRaterId']) || (data.seniorRaterId is string && data.seniorRaterId.size() <= 128)) &&
-             (!data.keys().hasAny(['seniorRaterEffectiveDate']) || (data.seniorRaterEffectiveDate is string && data.seniorRaterEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['reviewerId']) || (data.reviewerId is string && data.reviewerId.size() <= 128)) &&
-             (!data.keys().hasAny(['reviewerEffectiveDate']) || (data.reviewerEffectiveDate is string && data.reviewerEffectiveDate.size() <= 20)) &&
-             (!data.keys().hasAny(['submissionType']) || (data.submissionType is string && data.submissionType.size() <= 50)) &&
-             (!data.keys().hasAny(['version']) || (data.version is string && data.version.size() <= 50)) &&
+             data.element is string && data.element.size() <= 300 &&
+             data.rank is string && data.rank.size() <= 200 &&
+             data.name is string && data.name.size() <= 400 &&
+             data.role is string && data.role.size() <= 400 &&
+             (!data.keys().hasAny(['dutyMosc']) || data.dutyMosc == null || (data.dutyMosc is string && data.dutyMosc.size() <= 200)) &&
+             (!data.keys().hasAny(['from']) || data.from == null || (data.from is string && data.from.size() <= 100)) &&
+             (!data.keys().hasAny(['thru']) || data.thru == null || (data.thru is string && data.thru.size() <= 100)) &&
+             (!data.keys().hasAny(['dueHqda']) || data.dueHqda == null || (data.dueHqda is string && data.dueHqda.size() <= 100)) &&
+             (!data.keys().hasAny(['raterId']) || data.raterId == null || (data.raterId is string && data.raterId.size() <= 128)) &&
+             (!data.keys().hasAny(['raterEffectiveDate']) || data.raterEffectiveDate == null || (data.raterEffectiveDate is string && data.raterEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['seniorRaterId']) || data.seniorRaterId == null || (data.seniorRaterId is string && data.seniorRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['seniorRaterEffectiveDate']) || data.seniorRaterEffectiveDate == null || (data.seniorRaterEffectiveDate is string && data.seniorRaterEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['reviewerId']) || data.reviewerId == null || (data.reviewerId is string && data.reviewerId.size() <= 128)) &&
+             (!data.keys().hasAny(['reviewerEffectiveDate']) || data.reviewerEffectiveDate == null || (data.reviewerEffectiveDate is string && data.reviewerEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['submissionType']) || data.submissionType == null || (data.submissionType is string && data.submissionType.size() <= 200)) &&
+             (!data.keys().hasAny(['version']) || data.version == null || (data.version is string && data.version.size() <= 100)) &&
+             (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
+             (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
+             (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
+             (!data.keys().hasAny(['isLateMode']) || data.isLateMode is bool) &&
+             (!data.keys().hasAny(['lateRaterId']) || data.lateRaterId == null || (data.lateRaterId is string && data.lateRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['lateSeniorRaterId']) || data.lateSeniorRaterId == null || (data.lateSeniorRaterId is string && data.lateSeniorRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['priorThru']) || data.priorThru == null || (data.priorThru is string && data.priorThru.size() <= 100)) &&
+             (!data.keys().hasAny(['priorDueHqda']) || data.priorDueHqda == null || (data.priorDueHqda is string && data.priorDueHqda.size() <= 100)) &&
+             (!data.keys().hasAny(['isCustomStatus']) || data.isCustomStatus is bool) &&
+             (!data.keys().hasAny(['corNewRaterId']) || data.corNewRaterId == null || (data.corNewRaterId is string && data.corNewRaterId.size() <= 128)) &&
+             (!data.keys().hasAny(['corEffectiveDate']) || data.corEffectiveDate == null || (data.corEffectiveDate is string && data.corEffectiveDate.size() <= 100)) &&
+             (!data.keys().hasAny(['parentRecordId']) || data.parentRecordId == null || (data.parentRecordId is string && data.parentRecordId.size() <= 128)) &&
+             (!data.keys().hasAny(['isHistoryEntry']) || data.isHistoryEntry is bool) &&
+             (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
+    }
+
+    function isValidNote(data) {
+      return data.keys().hasAll(['id', 'schemeId', 'userId', 'soldierName', 'content']) &&
+             data.keys().size() <= 7 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.schemeId is string && data.schemeId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.soldierName is string && data.soldierName.size() <= 400 &&
+             data.content is string && data.content.size() <= 10000 &&
+             (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp || data.createdAt == null) &&
              (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp || data.updatedAt == null);
     }
 
@@ -80,6 +109,18 @@ service cloud.firestore {
         get(/databases/$(database)/documents/schemes/$(sId)).data.userId == request.auth.uid || (
           get(/databases/$(database)/documents/schemes/$(sId)).data.isShared == true &&
           get(/databases/$(database)/documents/schemes/$(sId)).data.allowEdit == true
+        )
+      );
+    }
+
+    function isSchemeEditableForVersion(sId, recordVersion) {
+      return exists(/databases/$(database)/documents/schemes/$(sId)) && (
+        get(/databases/$(database)/documents/schemes/$(sId)).data.userId == request.auth.uid || (
+          get(/databases/$(database)/documents/schemes/$(sId)).data.isShared == true &&
+          get(/databases/$(database)/documents/schemes/$(sId)).data.allowEdit == true && (
+            !(recordVersion == 'current' || recordVersion == null || recordVersion == '') ||
+            get(/databases/$(database)/documents/schemes/$(sId)).data.allowEditCurrent == true
+          )
         )
       );
     }
@@ -108,16 +149,47 @@ service cloud.firestore {
                     
       allow update: if isValidId(schemeId) &&
                     isValidRatingScheme(incoming()) &&
-                    isOwner(existing().userId) && (
+                    (isOwner(existing().userId) || (existing().isShared == true && existing().allowEdit == true)) && (
                       // Action: Rename
                       (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt']) && incoming().updatedAt == request.time) ||
                       // Action: Toggle Share
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['isShared', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['isShared', 'updatedAt']) && incoming().updatedAt == request.time) ||
                       // Action: Toggle Edit
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'updatedAt']) && incoming().updatedAt == request.time)
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Toggle Edit Current
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['allowEditCurrent', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Toggle Edit and Edit Current
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['allowEdit', 'allowEditCurrent', 'updatedAt']) && incoming().updatedAt == request.time) ||
+                      // Action: Update Dates
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['effectiveAsOf', 'proposedEffectiveDateFuture', 'proposedEffectiveDateAlternate', 'updatedAt']) && incoming().updatedAt == request.time)
                     );
                     
       allow delete: if isValidId(schemeId) && isOwner(resource.data.userId);
+    }
+
+    match /notes/{noteId} {
+      allow get: if isValidId(noteId) && (
+        isOwner(resource.data.userId) || isSchemeReadable(resource.data.schemeId)
+      );
+      
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || 
+                     isSchemeReadable(resource.data.schemeId);
+      
+      allow create: if isValidId(noteId) &&
+                    isValidNote(incoming()) &&
+                    isSchemeEditable(incoming().schemeId) &&
+                    isOwner(incoming().userId);
+                    
+      allow update: if isValidId(noteId) &&
+                    isValidNote(incoming()) &&
+                    isSchemeEditable(existing().schemeId) &&
+                    isOwner(existing().userId) && (
+                      incoming().diff(existing()).affectedKeys().hasOnly([
+                        'content', 'updatedAt'
+                      ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
+                    );
+                    
+      allow delete: if isValidId(noteId) && isSchemeEditable(resource.data.schemeId);
     }
 
     match /records/{recordId} {
@@ -130,20 +202,32 @@ service cloud.firestore {
       
       allow create: if isValidId(recordId) &&
                     isValidArmyRatingRecord(incoming()) &&
-                    isSchemeEditable(incoming().schemeId);
+                    isSchemeEditableForVersion(incoming().schemeId, incoming().version);
                     
       allow update: if isValidId(recordId) &&
                     isValidArmyRatingRecord(incoming()) &&
-                    isSchemeEditable(existing().schemeId) && (
+                    isSchemeEditableForVersion(existing().schemeId, existing().version) &&
+                    isSchemeEditableForVersion(incoming().schemeId, incoming().version) && (
                       // Immutable constraints on id, userId, and schemeId are guaranteed by ensuring they are not part of update-changed fields
                       incoming().diff(existing()).affectedKeys().hasOnly([
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
-                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 'updatedAt'
+                        'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
+                        'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
+                        'lateRaterId', 'lateSeniorRaterId',
+                        'priorThru', 'priorDueHqda', 'isCustomStatus', 'corNewRaterId', 
+                        'corEffectiveDate', 'parentRecordId', 'isHistoryEntry', 'updatedAt'
                       ]) && (incoming().updatedAt == request.time || incoming().updatedAt == null)
                     );
                     
-      allow delete: if isValidId(recordId) && isSchemeEditable(resource.data.schemeId);
+      allow delete: if isValidId(recordId) && isSchemeEditableForVersion(resource.data.schemeId, resource.data.version);
+
+      match /history/{historyId} {
+        allow read: if isSchemeReadable(get(/databases/$(database)/documents/records/$(recordId)).data.schemeId);
+        allow create: if isSchemeEditableForVersion(incoming().schemeId, incoming().version);
+        allow update: if isSchemeEditableForVersion(existing().schemeId, existing().version) && isSchemeEditableForVersion(incoming().schemeId, incoming().version);
+        allow delete: if isSchemeEditableForVersion(existing().schemeId, existing().version);
+      }
     }
   }
 }

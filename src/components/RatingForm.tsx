@@ -15,7 +15,7 @@ interface RatingFormProps {
   onSave: (record: ArmyRatingRecord) => void;
   onCancel: () => void;
   editingRecord: ArmyRatingRecord | null;
-  selectedVersion?: "current" | "future" | "alternate";
+  selectedVersion?: string;
 }
 
 const COMMON_RANKS = ["SSG", "SFC", "MSG", "SGM", "1LT", "2LT", "CPT", "MAJ", "LTC", "COL"];
@@ -235,6 +235,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       : seniorRaterId;
 
     const savedRecord: ArmyRatingRecord = {
+      ...editingRecord,
       id: editingRecord ? editingRecord.id : `record_${Date.now()}`,
       element: element.trim(),
       dutyMosc: dutyMosc.trim() || "42R",
@@ -256,8 +257,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : "",
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
-      lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) ? lateRaterId : undefined,
-      lateSeniorRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) ? lateSeniorRaterId : undefined,
+      lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateRaterId : undefined,
+      lateSeniorRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateSeniorRaterId : undefined,
       isCustomStatus
     };
 
@@ -828,7 +829,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                 <option value="custom">Other / Custom Status...</option>
               </select>
 
-              {(ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late"))) && (
+              {(ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) && (
                 <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-1.5 h-4 bg-amber-500 rounded-full" />

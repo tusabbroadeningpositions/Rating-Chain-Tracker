@@ -82,6 +82,7 @@ export async function createScheme(userId: string, name: string): Promise<string
     userId,
     isShared: false,
     allowEdit: false,
+    allowEditCurrent: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
@@ -147,6 +148,18 @@ export async function toggleSchemeEdit(schemeId: string, allowEdit: boolean): Pr
   try {
     await updateDoc(doc(db, SCHEMES_COL, schemeId), {
       allowEdit,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function toggleSchemeEditCurrent(schemeId: string, allowEditCurrent: boolean): Promise<void> {
+  const path = `${SCHEMES_COL}/${schemeId}`;
+  try {
+    await updateDoc(doc(db, SCHEMES_COL, schemeId), {
+      allowEditCurrent,
       updatedAt: serverTimestamp()
     });
   } catch (error) {
@@ -413,6 +426,7 @@ export async function duplicateScheme(userId: string, schemeId: string, original
     userId,
     isShared: false,
     allowEdit: false,
+    allowEditCurrent: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
@@ -476,6 +490,7 @@ export async function createDefaultScheme(userId: string): Promise<string> {
     userId,
     isShared: false,
     allowEdit: false,
+    allowEditCurrent: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
@@ -573,7 +588,7 @@ export async function updateHistoryRecord(recordId: string, historyId: string, d
 export async function copyVersion(
   userId: string,
   schemeId: string,
-  fromVersion: "current" | "future" | "alternate",
+  fromVersion: "current" | "future" | "alternate" | string,
   toVersion: "current" | "future" | "alternate"
 ): Promise<void> {
   const batch = writeBatch(db);
@@ -640,6 +655,88 @@ export async function copyVersion(
     await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, RECORDS_COL);
+  }
+}
+
+export async function deleteArchive(
+  userId: string,
+  schemeId: string,
+  archiveId: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  try {
+    const q = query(
+      collection(db, RECORDS_COL),
+      where("userId", "==", userId),
+      where("schemeId", "==", schemeId),
+      where("version", "==", archiveId)
+    );
+    const snapshot = await getDocs(q);
+    snapshot.docs.forEach(d => {
+      batch.delete(d.ref);
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, RECORDS_COL);
+  }
+}
+
+export async function archiveCurrentVersion(
+  userId: string,
+  schemeId: string,
+  effectiveAsOf: string
+): Promise<string> {
+  const batch = writeBatch(db);
+  const dateStr = effectiveAsOf ? effectiveAsOf.replace(/[^a-zA-Z0-9_\-]/g, "") : new Date().toISOString().split("T")[0];
+  const archiveId = `archive_${dateStr}_${Date.now()}`;
+
+  try {
+    const q = query(
+      collection(db, RECORDS_COL),
+      where("userId", "==", userId),
+      where("schemeId", "==", schemeId)
+    );
+    const snapshot = await getDocs(q);
+
+    const allRecords = snapshot.docs.map(d => d.data() as ArmyRatingRecord);
+    const currentRecords = allRecords.filter(r => (r.version || "current") === "current");
+
+    if (currentRecords.length === 0) {
+      return "";
+    }
+
+    const idMap: { [oldId: string]: string } = {};
+    currentRecords.forEach(r => {
+      idMap[r.id] = doc(collection(db, RECORDS_COL)).id;
+    });
+
+    currentRecords.forEach(record => {
+      const newId = idMap[record.id];
+      if (!newId) return;
+
+      const clonedRecord: ArmyRatingRecord = {
+        ...record,
+        id: newId,
+        raterId: idMap[record.raterId] || (record.raterId ? record.raterId : ""),
+        seniorRaterId: idMap[record.seniorRaterId] || (record.seniorRaterId ? record.seniorRaterId : ""),
+        reviewerId: idMap[record.reviewerId] || (record.reviewerId ? record.reviewerId : ""),
+        version: archiveId
+      };
+
+      const ref = doc(db, RECORDS_COL, newId);
+      batch.set(ref, {
+        ...clonedRecord,
+        userId,
+        schemeId,
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    return archiveId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, RECORDS_COL);
+    throw error;
   }
 }
 

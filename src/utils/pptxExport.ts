@@ -934,7 +934,7 @@ export function exportNcoerReportToPPTX(
         const currentRec = findCurrentRecord(r);
         const thruToUse = item.thru;
         const daysText = getDaysRemainingText(thruToUse);
-        const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+        const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late" || !!currentRec.priorThru;
         const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : r.raterId;
         const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : r.seniorRaterId;
         const hqdaDueStr = isActuallyLate ? (currentRec.priorDueHqda || add90Days(thruToUse)) : (r.dueHqda || add90Days(r.thru));

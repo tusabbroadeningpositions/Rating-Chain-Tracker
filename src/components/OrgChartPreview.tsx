@@ -8,15 +8,15 @@ import { motion } from "motion/react";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
-import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle, History as HistoryIcon } from "lucide-react";
 
 interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
   onEditClick: (record: ArmyRatingRecord) => void;
   readOnly?: boolean;
   activeSchemeName?: string;
-  selectedVersion?: "current" | "future" | "alternate";
-  onChangeVersion?: (version: "current" | "future" | "alternate") => void;
+  selectedVersion?: string;
+  onChangeVersion?: (version: string) => void;
   allRecords?: ArmyRatingRecord[];
   effectiveAsOf?: string;
   proposedDate?: string;
@@ -460,27 +460,45 @@ export default function OrgChartPreview({
       <div className={isFullscreen ? "" : "space-y-3"}>
           {/* Professional Disclaimer Note - Positioned directly above preview */}
           {!isFullscreen && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded shadow-sm flex items-start gap-3 print:hidden">
-              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="text-[11px] font-bold text-blue-900 uppercase tracking-tight">Visualization Preview</h3>
-                <p className="text-[10px] text-blue-800 mt-0.5 leading-relaxed">
-                  This interactive display is provided for rapid preview and layout verification. 
-                  The official PowerPoint export is automatically formatted in strict accordance with HR regulatory guidance 
-                  to ensure professional presentation, precision, and structural compliance.
-                </p>
+            selectedVersion?.startsWith("archive_") ? (
+              <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded shadow-sm flex items-start gap-3 print:hidden">
+                <HistoryIcon className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0 animate-pulse" />
+                <div>
+                  <h3 className="text-[11px] font-bold text-amber-950 uppercase tracking-tight">Viewing Historical Archive</h3>
+                  <p className="text-[10px] text-amber-800 mt-0.5 leading-relaxed">
+                    You are currently viewing a read-only historical copy of this roster. 
+                    Any modifications are locked. To make adjustments, reinstate this archive as your active current or draft roster.
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded shadow-sm flex items-start gap-3 print:hidden">
+                <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="text-[11px] font-bold text-blue-900 uppercase tracking-tight">Visualization Preview</h3>
+                  <p className="text-[10px] text-blue-800 mt-0.5 leading-relaxed">
+                    This interactive display is provided for rapid preview and layout verification. 
+                    The official PowerPoint export is automatically formatted in strict accordance with HR regulatory guidance 
+                    to ensure professional presentation, precision, and structural compliance.
+                  </p>
+                </div>
+              </div>
+            )
           )}
 
           <div className={isFullscreen 
             ? "fixed inset-0 z-50 bg-slate-950 flex flex-col h-screen w-screen overflow-hidden p-0" 
-            : "bg-slate-900 rounded p-5 border border-slate-950 overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between"
+            : `bg-slate-900 rounded p-5 border overflow-hidden shadow-lg relative min-h-[600px] flex flex-col justify-between transition-all duration-300 ${
+                selectedVersion?.startsWith("archive_") 
+                  ? "border-amber-500/80 ring-4 ring-amber-500/15" 
+                  : "border-slate-950"
+              }`
           }>
             {isFullscreen && (
               <div className={`transition-colors duration-300 px-6 py-3.5 flex flex-wrap justify-between items-center shrink-0 gap-3 z-10 border-b shadow-lg ${
                 selectedVersion === "future" ? "bg-sky-600 border-sky-700 text-white" : 
                 selectedVersion === "alternate" ? "bg-emerald-600 border-emerald-700 text-white" : 
+                selectedVersion?.startsWith("archive_") ? "bg-amber-850 border-amber-900 text-amber-100" :
                 "bg-[#1e293b] border-slate-800 text-white"
               }`}>
                 <div className="flex items-center gap-3">

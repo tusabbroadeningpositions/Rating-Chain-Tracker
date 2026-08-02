@@ -5,14 +5,13 @@
 
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import { jsPDF } from "jspdf";
-import * as htmlToImage from 'html-to-image';
 // @ts-ignore
 import XLSX from "xlsx-js-style";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank, Note } from "../types";
 import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History as HistoryIcon, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
 import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord, subscribeToNotes, addNote, deleteNote } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
 import { exportNcoerReportToPPTX } from "../utils/pptxExport";
@@ -26,8 +25,8 @@ interface RatingTableProps {
   onImportCSV: (newRecords: ArmyRatingRecord[], append: boolean) => void;
   onUpdateRecord: (record: ArmyRatingRecord) => void;
   readOnly?: boolean;
-  selectedVersion?: "current" | "future" | "alternate";
-  onChangeVersion?: (version: "current" | "future" | "alternate") => void;
+  selectedVersion?: string;
+  onChangeVersion?: (version: string) => void;
   activeSchemeName?: string;
   proposedEffectiveDate?: string;
   onPromoteVersion?: (fromVersion: "future" | "alternate") => void;
@@ -85,6 +84,7 @@ export default function RatingTable({
   const [sortAlphabetically, setSortAlphabetically] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [csvError, setCsvError] = useState("");
+  const [showOnlyDiscrepancies, setShowOnlyDiscrepancies] = useState(false);
   const [importPending, setImportPending] = useState<ArmyRatingRecord[] | null>(null);
   
   const [activeCustomStatusRecordId, setActiveCustomStatusRecordId] = useState<string | null>(null);
@@ -343,7 +343,7 @@ export default function RatingTable({
                       };
 
                       const currentRec = allRecords?.find(x => x.id === item.record.id) || item.record;
-                      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+                      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late" || !!currentRec.priorThru;
                       const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : item.record.raterId;
                       const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : item.record.seniorRaterId;
 
@@ -563,7 +563,6 @@ export default function RatingTable({
       setManualLateSeniorRaterId(current.seniorRaterId || "");
       try {
         const d = new Date(current.thru + "T12:00:00");
-        d.setFullYear(d.getFullYear() - 1);
         setManualLateThru(d.toISOString().split('T')[0]);
       } catch (e) {
         setManualLateThru("");
@@ -865,6 +864,16 @@ export default function RatingTable({
     "Support Musicians": 8,
   };
 
+  const hasDiscrepancy = (r: ArmyRatingRecord) => {
+    return !!(
+      getSeniorRaterMismatchInfo(r) ||
+      getReviewerMismatchInfo(r) ||
+      isSeniorNcoNotRating(r) ||
+      getTwoRanksAboveRaterWarning(r) ||
+      getSameRankRaterWarning(r)
+    );
+  };
+
   // Filter and Sort records
   const filteredRecords = records
     .filter(r => {
@@ -882,7 +891,9 @@ export default function RatingTable({
       const seniorRaterName = getRaterName(r.seniorRaterId);
       const matchesSeniorRater = selectedSeniorRater ? (r.seniorRaterId === selectedSeniorRater || seniorRaterName === selectedSeniorRater) : true;
 
-      return matchesSearch && matchesRole && matchesRater && matchesSeniorRater;
+      const matchesDiscrepancy = showOnlyDiscrepancies ? hasDiscrepancy(r) : true;
+
+      return matchesSearch && matchesRole && matchesRater && matchesSeniorRater && matchesDiscrepancy;
     })
     .sort((a, b) => {
       if (sortAlphabetically) {
@@ -1246,7 +1257,7 @@ export default function RatingTable({
       const roleStr = r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role}\n(${r.keyLeaderTitle})` : r.role;
       const moscAndRole = `${roleStr}\n[MOSC: ${r.dutyMosc || "—"}]`;
 
-      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late";
+      const isActuallyLate = item.isLate || currentRec.ncoerStatus === "Late" || !!currentRec.priorThru;
       const raterToUse = isActuallyLate && currentRec.lateRaterId ? currentRec.lateRaterId : r.raterId;
       const srToUse = isActuallyLate && currentRec.lateSeniorRaterId ? currentRec.lateSeniorRaterId : r.seniorRaterId;
 
@@ -2123,7 +2134,7 @@ export default function RatingTable({
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     
-    if (expandedHistoryRecordId) {
+    if (expandedHistoryRecordId && user) {
       setIsHistoryLoading(true);
       unsubscribe = subscribeToRecordHistory(expandedHistoryRecordId, (history) => {
         setRecordHistory(history);
@@ -2137,11 +2148,11 @@ export default function RatingTable({
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [expandedHistoryRecordId]);
+  }, [expandedHistoryRecordId, user]);
 
   // Synchronize Notes (Firestore vs Local Storage fallback)
   useEffect(() => {
-    if (activeSchemeId) {
+    if (activeSchemeId && user) {
       const unsubscribe = subscribeToNotes(activeSchemeId, (notes) => {
         setAllNotes(notes);
       }, (err) => {
@@ -2168,7 +2179,7 @@ export default function RatingTable({
         setAllNotes([]);
       }
     }
-  }, [activeSchemeId]);
+  }, [activeSchemeId, user]);
 
   const handleAddNote = async () => {
     if (!activeNoteSoldierName || !noteInputText.trim()) return;
@@ -2520,10 +2531,8 @@ export default function RatingTable({
     setManualLateRecord(r);
     setManualLateRaterId(r.raterId || "");
     setManualLateSeniorRaterId(r.seniorRaterId || "");
-    // Default thru date is one year prior to current thru
     try {
       const d = new Date(r.thru + "T12:00:00");
-      d.setFullYear(d.getFullYear() - 1);
       setManualLateThru(d.toISOString().split('T')[0]);
     } catch (e) {
       setManualLateThru("");
@@ -2539,7 +2548,7 @@ export default function RatingTable({
       priorDueHqda: add90Days(manualLateThru),
       lateRaterId: manualLateRaterId,
       lateSeniorRaterId: manualLateSeniorRaterId,
-      ncoerStatus: "Not Submitted to HR"
+      ncoerStatus: manualLateRecord.ncoerStatus || "Not Submitted to HR"
     });
     setManualLateRecord(null);
   };
@@ -2547,8 +2556,11 @@ export default function RatingTable({
   return (
     <div className="space-y-4 transition-colors duration-500 min-h-screen bg-slate-100">
       {/* Search, Filter & Actions Bar */}
-      <div className={`bg-white rounded shadow-sm border p-3 space-y-3 mx-4 mt-4 ${
-        selectedVersion === "future" ? "border-blue-200" : selectedVersion === "alternate" ? "border-emerald-200" : "border-slate-200"
+      <div className={`bg-white rounded shadow-sm border p-3 space-y-3 mx-4 mt-4 transition-all duration-300 ${
+        selectedVersion === "future" ? "border-blue-200" : 
+        selectedVersion === "alternate" ? "border-emerald-200" : 
+        selectedVersion.startsWith("archive_") ? "border-amber-400/80 ring-2 ring-amber-500/10 bg-amber-50/5" :
+        "border-slate-200"
       }`}>
         <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center">
           
@@ -2711,12 +2723,27 @@ export default function RatingTable({
       </div>
 
       {mismatchCount > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded px-3 py-1.5 text-amber-800 text-xs flex items-center gap-2 shadow-xs">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-          <span>
-            <strong className="font-semibold text-amber-900">{mismatchCount} rating chain discrepancy{mismatchCount === 1 ? "" : "ies"}</strong> found.
+        <button
+          onClick={() => setShowOnlyDiscrepancies(!showOnlyDiscrepancies)}
+          className={`w-full text-left bg-amber-50 border ${
+            showOnlyDiscrepancies ? "border-amber-500 ring-1 ring-amber-500" : "border-amber-200 hover:border-amber-300"
+          } rounded px-3 py-1.5 text-amber-800 text-xs flex items-center justify-between gap-2 shadow-xs transition-all cursor-pointer`}
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+            <span>
+              <strong className="font-semibold text-amber-900">{mismatchCount} rating chain discrepancy{mismatchCount === 1 ? "" : "ies"}</strong> found.
+              {showOnlyDiscrepancies && (
+                <span className="ml-2 font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide">
+                  FILTERING ACTIVE
+                </span>
+              )}
+            </span>
+          </div>
+          <span className="text-[10px] font-bold uppercase text-amber-600 hover:text-amber-800">
+            {showOnlyDiscrepancies ? "Show All Records" : "Click to Filter Discrepancies Only"}
           </span>
-        </div>
+        </button>
       )}
 
       {/* Spreadsheet List Container */}
@@ -2748,7 +2775,11 @@ export default function RatingTable({
               setShowGreenLine(active);
             }
           }}
-          className="w-full bg-white relative overflow-visible border border-slate-200 rounded-lg shadow-sm"
+          className={`w-full bg-white relative overflow-visible border rounded-lg shadow-sm transition-all duration-300 ${
+            selectedVersion.startsWith("archive_") 
+              ? "border-amber-500/70 ring-4 ring-amber-500/10 bg-amber-50/5" 
+              : "border-slate-200"
+          }`}
         >
           <table className="w-full min-w-[1200px] text-left border-collapse text-[11px]" id="rating-records-table">
             <thead className="z-20">
@@ -2757,6 +2788,7 @@ export default function RatingTable({
                 <th colSpan={selectedVersion === "current" ? 12 : 11} className={`px-3 py-2 border-b sticky top-0 z-50 h-[34px] ${
                   selectedVersion === "future" ? "bg-sky-600 border-sky-700 text-white" : 
                   selectedVersion === "alternate" ? "bg-emerald-600 border-emerald-700 text-white" : 
+                  selectedVersion.startsWith("archive_") ? "bg-amber-800 border-amber-900 text-amber-50" :
                   "bg-[#1e293b] border-slate-800 text-white"
                 }`}>
                   <div className="flex items-center justify-between">
@@ -2992,7 +3024,7 @@ export default function RatingTable({
                               }`}
                               title={selectedVersion === "current" ? "View Projected / Notes" : "View Current Version Reference"}
                             >
-                              <History className="w-2.5 h-2.5" />
+                              <HistoryIcon className="w-2.5 h-2.5" />
                               {selectedVersion === "current" ? "Projected / Notes" : "View Current"}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                             </button>
@@ -3054,11 +3086,11 @@ export default function RatingTable({
                         <div className="flex items-start justify-between gap-1">
                           <div>
                             <div className="font-semibold text-slate-800 leading-tight">
-                              {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId 
+                              {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateRaterId 
                                 ? getRaterName(r.lateRaterId) 
                                 : getRaterName(r.raterId)}
                             </div>
-                            {isCurrent && ncoerInfo.status === "Late" && r.lateRaterId ? (
+                            {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateRaterId ? (
                                <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
                             ) : r.raterId && r.raterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -3095,11 +3127,11 @@ export default function RatingTable({
                         <div className="flex items-start justify-between gap-1">
                           <div>
                             <div className="font-semibold text-slate-800 leading-tight">
-                              {isCurrent && ncoerInfo.status === "Late" && r.lateSeniorRaterId 
+                              {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateSeniorRaterId 
                                 ? getRaterName(r.lateSeniorRaterId) 
                                 : getRaterName(r.seniorRaterId)}
                             </div>
-                            {isCurrent && ncoerInfo.status === "Late" && r.lateSeniorRaterId ? (
+                            {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateSeniorRaterId ? (
                               <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
                             ) : r.seniorRaterId && r.seniorRaterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -3461,11 +3493,11 @@ export default function RatingTable({
                                             </td>
                                             <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'raterId') || getDiffClass(r, projected, 'raterEffectiveDate')}`}>
                                               <div className="font-bold text-slate-700">
-                                                {projected.ncoerStatus === "Late" && projected.lateRaterId 
+                                                {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateRaterId 
                                                   ? getRaterName(projected.lateRaterId) 
                                                   : (projected.raterId ? getRaterName(projected.raterId) : "Unassigned")}
                                               </div>
-                                              {projected.ncoerStatus === "Late" && projected.lateRaterId ? (
+                                              {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateRaterId ? (
                                                 <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
                                               ) : projected.raterEffectiveDate && (
                                                 <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.raterEffectiveDate}</div>
@@ -3473,11 +3505,11 @@ export default function RatingTable({
                                             </td>
                                             <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'seniorRaterId') || getDiffClass(r, projected, 'seniorRaterEffectiveDate')}`}>
                                               <div className="font-bold text-slate-700">
-                                                {projected.ncoerStatus === "Late" && projected.lateSeniorRaterId 
+                                                {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateSeniorRaterId 
                                                   ? getRaterName(projected.lateSeniorRaterId) 
                                                   : (projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned")}
                                               </div>
-                                              {projected.ncoerStatus === "Late" && projected.lateSeniorRaterId ? (
+                                              {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateSeniorRaterId ? (
                                                 <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
                                               ) : projected.seniorRaterEffectiveDate && (
                                                 <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.seniorRaterEffectiveDate}</div>
@@ -3501,7 +3533,7 @@ export default function RatingTable({
                               <div className="pt-4 border-t border-slate-200">
                                 <div className="flex items-center gap-2 mb-4">
                                   <div className="p-1.5 bg-slate-200 rounded-full">
-                                    <History className="w-4 h-4 text-slate-600" />
+                                    <HistoryIcon className="w-4 h-4 text-slate-600" />
                                   </div>
                                   <div>
                                     <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-widest leading-none">Record Change History</h4>
@@ -3518,7 +3550,7 @@ export default function RatingTable({
                                 <div className="space-y-4">
                                   {recordHistory.length === 0 ? (
                                     <div className="bg-slate-50/50 border border-slate-200 rounded-lg p-8 text-center">
-                                       <History className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                                       <HistoryIcon className="w-8 h-8 text-slate-200 mx-auto mb-2" />
                                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest italic leading-tight">
                                           No historical snapshots recorded yet.<br/>
                                           Snapshots are created when records are updated.
@@ -3705,7 +3737,7 @@ export default function RatingTable({
                                 <div className="flex items-center justify-between gap-2 mb-4 border-b border-slate-200 pb-3">
                                   <div className="flex items-center gap-2">
                                     <div className="p-1.5 bg-slate-200 rounded-full border border-slate-300">
-                                      <History className="w-4 h-4 text-slate-600" />
+                                      <HistoryIcon className="w-4 h-4 text-slate-600" />
                                     </div>
                                     <div>
                                       <h4 className="text-[12px] font-black text-slate-800 uppercase tracking-widest leading-none">Current Version Reference</h4>
@@ -4217,7 +4249,7 @@ export default function RatingTable({
                         priorDueHqda: add90Days(manualLateThru),
                         lateRaterId: manualLateRaterId,
                         lateSeniorRaterId: manualLateSeniorRaterId,
-                        ncoerStatus: "Not Submitted to HR"
+                        ncoerStatus: overwriteLateDecision.current.ncoerStatus || "Not Submitted to HR"
                       });
                       setOverwriteLateDecision(null);
                     }}
@@ -4293,7 +4325,6 @@ export default function RatingTable({
                     setManualLateSeniorRaterId(first.seniorRaterId || "");
                     try {
                       const d = new Date(first.thru + "T12:00:00");
-                      d.setFullYear(d.getFullYear() - 1);
                       setManualLateThru(d.toISOString().split('T')[0]);
                     } catch (e) {
                       setManualLateThru("");
@@ -4469,7 +4500,7 @@ export default function RatingTable({
                       priorDueHqda: add90Days(manualLateThru),
                       lateRaterId: manualLateRaterId,
                       lateSeniorRaterId: manualLateSeniorRaterId,
-                      ncoerStatus: "Not Submitted to HR"
+                      ncoerStatus: record.ncoerStatus || "Not Submitted to HR"
                     };
                     
                     const nextQueue = [...batchPromoteIncomplete];
@@ -4504,7 +4535,6 @@ export default function RatingTable({
                       setManualLateSeniorRaterId(next.seniorRaterId || "");
                       try {
                         const d = new Date(next.thru + "T12:00:00");
-                        d.setFullYear(d.getFullYear() - 1);
                         setManualLateThru(d.toISOString().split('T')[0]);
                       } catch (e) {
                         setManualLateThru("");
@@ -4764,7 +4794,7 @@ export default function RatingTable({
                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Previous Rater</div>
                     <div className="p-4 bg-white border-2 border-slate-100 rounded-2xl shadow-sm text-center group">
                       <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-2 text-slate-400 border border-slate-50">
-                        <History className="w-5 h-5" />
+                        <HistoryIcon className="w-5 h-5" />
                       </div>
                       <div className="font-bold text-slate-800 text-sm truncate">{getRaterName(selectedCorRecord.raterId)}</div>
                     </div>
