@@ -50,6 +50,135 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [lateRaterId, setLateRaterId] = useState("");
   const [lateSeniorRaterId, setLateSeniorRaterId] = useState("");
 
+  const [srChangeProposal, setSrChangeProposal] = useState<{
+    proposedSrId: string;
+    proposedSrName: string;
+    newRaterId: string;
+    newRaterName: string;
+    proposedEffDate: string;
+    proposedReviewerId?: string;
+    proposedReviewerName?: string;
+    requiresReviewer?: boolean;
+  } | null>(null);
+  const [proposalRaterEffDate, setProposalRaterEffDate] = useState("");
+  const [proposalSrEffDate, setProposalSrEffDate] = useState("");
+  const [proposalReviewerEffDate, setProposalReviewerEffDate] = useState("");
+
+  const handleRaterSelect = (newRId: string) => {
+    setRaterId(newRId);
+    
+    if (newRId) {
+      const rList = allRecords && allRecords.length > 0 ? allRecords : records;
+      const newRaterRec = rList.find(r => r.id === newRId);
+      
+      if (newRaterRec && newRaterRec.raterId && newRaterRec.raterId !== "-") {
+        const expectedSrId = newRaterRec.raterId;
+        
+        let isDifferent = false;
+        if (role === RatingRole.ELEMENT_LEADER) {
+          const currentSrManualFormatted = srManualName.trim() ? formatNameToLastFirstRank(srManualName.trim(), srManualRank.trim()) : "";
+          const expectedSrRec = rList.find(r => r.id === expectedSrId);
+          const expectedSrName = expectedSrRec ? formatNameToLastFirstRank(expectedSrRec.name, expectedSrRec.rank) : expectedSrId;
+          if (currentSrManualFormatted.toLowerCase() !== expectedSrName.toLowerCase()) {
+            isDifferent = true;
+          }
+        } else {
+          if (expectedSrId !== seniorRaterId) {
+            isDifferent = true;
+          }
+        }
+        
+        if (isDifferent) {
+          const proposedSrRec = rList.find(r => r.id === expectedSrId);
+          const proposedSrName = proposedSrRec 
+            ? formatNameToLastFirstRank(proposedSrRec.name, proposedSrRec.rank) 
+            : formatNameToLastFirstRank(expectedSrId);
+          
+          const newRaterName = formatNameToLastFirstRank(newRaterRec.name, newRaterRec.rank);
+          
+          const defaultEffDate = raterEffectiveDate || new Date().toISOString().split('T')[0];
+          
+          // Check if proposed senior rater is MSG. If so, a Reviewer (their SGM/CSM rater) is needed.
+          const isMsg = proposedSrRec && proposedSrRec.rank?.toUpperCase().trim() === "MSG";
+          let proposedReviewerId = "";
+          let proposedReviewerName = "";
+          let requiresReviewer = false;
+          
+          if (isMsg) {
+            requiresReviewer = true;
+            if (proposedSrRec && proposedSrRec.raterId && proposedSrRec.raterId !== "-") {
+              const reviewerRec = rList.find(r => r.id === proposedSrRec.raterId);
+              if (reviewerRec) {
+                proposedReviewerId = reviewerRec.id;
+                proposedReviewerName = formatNameToLastFirstRank(reviewerRec.name, reviewerRec.rank);
+              } else {
+                proposedReviewerId = proposedSrRec.raterId;
+                proposedReviewerName = formatNameToLastFirstRank(proposedSrRec.raterId);
+              }
+            }
+          }
+
+          setSrChangeProposal({
+            proposedSrId: expectedSrId,
+            proposedSrName,
+            newRaterId: newRId,
+            newRaterName,
+            proposedEffDate: defaultEffDate,
+            proposedReviewerId,
+            proposedReviewerName,
+            requiresReviewer
+          });
+          setProposalRaterEffDate(defaultEffDate);
+          setProposalSrEffDate(defaultEffDate);
+          setProposalReviewerEffDate(defaultEffDate);
+        }
+      }
+    }
+  };
+
+  const handleAcceptSrChange = (raterEffDate: string, srEffDate: string, reviewerId?: string, reviewerEffDate?: string) => {
+    if (!srChangeProposal) return;
+    
+    setRaterEffectiveDate(raterEffDate);
+    setSeniorRaterId(srChangeProposal.proposedSrId);
+    setSeniorRaterEffectiveDate(srEffDate);
+    
+    if (srChangeProposal.requiresReviewer && reviewerId) {
+      setReviewerId(reviewerId);
+      setReviewerEffectiveDate(reviewerEffDate || "");
+    }
+    
+    if (role === RatingRole.ELEMENT_LEADER) {
+      const rList = allRecords && allRecords.length > 0 ? allRecords : records;
+      const targetSrRec = rList.find(r => r.id === srChangeProposal.proposedSrId);
+      if (targetSrRec) {
+        setSrManualRank(targetSrRec.rank || "MAJ");
+        setSrManualName(targetSrRec.name);
+      } else {
+        const rawSeniorRater = srChangeProposal.proposedSrId;
+        const matchParentheses = rawSeniorRater.match(/^(.*?)\s*\(([^)]+)\)$/);
+        if (matchParentheses) {
+          const rawName = matchParentheses[1].trim();
+          const rawRank = matchParentheses[2].trim();
+          setSrManualName(formatNameToLastFirstRank(rawName).replace(/\s*\([^)]+\)$/, ""));
+          setSrManualRank(rawRank);
+        } else {
+          const matchedRank = SENIOR_RATER_RANKS.find(rk => rawSeniorRater.startsWith(rk + " "));
+          if (matchedRank) {
+            setSrManualRank(matchedRank);
+            const rawName = rawSeniorRater.substring(matchedRank.length + 1).trim();
+            setSrManualName(formatNameToLastFirstRank(rawName).replace(/\s*\([^)]+\)$/, ""));
+          } else {
+            setSrManualRank("MAJ");
+            setSrManualName(formatNameToLastFirstRank(rawSeniorRater).replace(/\s*\([^)]+\)$/, ""));
+          }
+        }
+      }
+    }
+    
+    setSrChangeProposal(null);
+  };
+
   // Initialize form with editing record or defaults
   useEffect(() => {
     if (editingRecord) {
@@ -930,7 +1059,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
                 <select
                   id="select-rater"
                   value={raterId}
-                  onChange={(e) => setRaterId(e.target.value)}
+                  onChange={(e) => handleRaterSelect(e.target.value)}
                   className={`w-full px-2.5 py-1.5 border rounded text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 ${
                     twoRanksAboveWarning || sameRankWarning ? "border-rose-300 focus:ring-rose-500 bg-rose-50/30" : "border-slate-200 focus:ring-sky-500"
                   }`}
@@ -1056,7 +1185,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               <select
                 id="select-rater"
                 value={raterId}
-                onChange={(e) => setRaterId(e.target.value)}
+                onChange={(e) => handleRaterSelect(e.target.value)}
                 className={`w-full px-3 py-1.5 border rounded text-xs focus:outline-none focus:ring-1 text-slate-800 bg-slate-50/50 ${
                   twoRanksAboveWarning || sameRankWarning ? "border-rose-300 focus:ring-rose-500 bg-rose-50/30" : "border-slate-200 focus:ring-amber-500"
                 }`}
@@ -1177,6 +1306,141 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
           {editingRecord ? "SAVE CHANGES" : "ADD PROFILE"}
         </button>
       </div>
+
+      {srChangeProposal && (
+        <div className="fixed inset-0 bg-slate-900/65 flex justify-center items-center p-4 z-[300] overflow-y-auto animate-fade-in print:hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 p-6 space-y-4">
+            <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+              <div className="p-2 bg-amber-50 rounded-full text-amber-600">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">Rating Chain Check</h4>
+                <p className="text-[10px] text-slate-500">Rater change detected</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You've changed the Rater to <strong className="text-slate-800">{srChangeProposal.newRaterName}</strong>. 
+                Based on the current rating structure, the Senior Rater should typically also change to:
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Expected Senior Rater</span>
+                  <span className="text-xs font-bold text-slate-800">{srChangeProposal.proposedSrName}</span>
+                </div>
+                <div className="px-2 py-1 bg-amber-100/50 text-amber-800 rounded text-[9px] font-bold tracking-wide uppercase border border-amber-200/30">
+                  Recommended
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    New Rater Effective Date
+                  </label>
+                  <input
+                    type="date"
+                    value={proposalRaterEffDate}
+                    onChange={(e) => {
+                      const newVal = e.target.value;
+                      setProposalRaterEffDate(newVal);
+                      if (proposalSrEffDate === proposalRaterEffDate) {
+                        setProposalSrEffDate(newVal);
+                      }
+                      if (proposalReviewerEffDate === proposalRaterEffDate) {
+                        setProposalReviewerEffDate(newVal);
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono bg-slate-50/30"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Senior Rater Effective Date
+                  </label>
+                  <input
+                    type="date"
+                    value={proposalSrEffDate}
+                    onChange={(e) => setProposalSrEffDate(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono bg-slate-50/30"
+                  />
+                  <p className="text-[9px] text-slate-400">
+                    Defaults to the new Rater's effective date.
+                  </p>
+                </div>
+              </div>
+
+              {srChangeProposal.requiresReviewer && (
+                <div className="space-y-3 pt-3 border-t border-slate-100 mt-2">
+                  <div className="bg-blue-50/50 border border-blue-200/60 rounded-xl p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider block">Required Reviewer (for MSG SR)</span>
+                        <span className="text-xs font-bold text-slate-800">
+                          {srChangeProposal.proposedReviewerName || "Unassigned (SGM rater of MSG not found)"}
+                        </span>
+                      </div>
+                      <div className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-[9px] font-bold tracking-wide uppercase border border-blue-200/30">
+                        Required
+                      </div>
+                    </div>
+                    <p className="text-[9.5px] text-slate-500 mt-1.5 leading-normal">
+                      Since the recommended Senior Rater is a <strong className="text-slate-700">MSG</strong>, a Reviewer (typically the MSG's SGM/CSM rater) must be added to the rating chain.
+                    </p>
+                  </div>
+
+                  {srChangeProposal.proposedReviewerId && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Reviewer Effective Date
+                      </label>
+                      <input
+                        type="date"
+                        value={proposalReviewerEffDate}
+                        onChange={(e) => setProposalReviewerEffDate(e.target.value)}
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-mono bg-slate-50/30"
+                      />
+                      <p className="text-[9px] text-slate-400">
+                        Defaults to the new Rater's effective date.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setRaterEffectiveDate(proposalRaterEffDate);
+                  setSrChangeProposal(null);
+                }}
+                className="px-3.5 py-1.5 border border-slate-200 rounded text-xs font-semibold text-slate-600 hover:bg-slate-50 bg-white transition-colors"
+              >
+                No, Keep Current SR
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAcceptSrChange(
+                  proposalRaterEffDate,
+                  proposalSrEffDate,
+                  srChangeProposal.proposedReviewerId,
+                  proposalReviewerEffDate
+                )}
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded text-xs font-bold shadow-sm flex items-center gap-1 transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Change Senior Rater
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

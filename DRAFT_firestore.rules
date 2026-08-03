@@ -178,7 +178,7 @@ service cloud.firestore {
       allow create: if isValidId(noteId) &&
                     isValidNote(incoming()) &&
                     isSchemeEditable(incoming().schemeId) &&
-                    isOwner(incoming().userId);
+                    (isOwner(incoming().userId) || (!isSignedIn() && incoming().userId == 'guest'));
                     
       allow update: if isValidId(noteId) &&
                     isValidNote(incoming()) &&

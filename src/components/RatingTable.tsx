@@ -2152,7 +2152,7 @@ export default function RatingTable({
 
   // Synchronize Notes (Firestore vs Local Storage fallback)
   useEffect(() => {
-    if (activeSchemeId && user) {
+    if (activeSchemeId) {
       const unsubscribe = subscribeToNotes(activeSchemeId, (notes) => {
         setAllNotes(notes);
       }, (err) => {
@@ -2179,7 +2179,7 @@ export default function RatingTable({
         setAllNotes([]);
       }
     }
-  }, [activeSchemeId, user]);
+  }, [activeSchemeId]);
 
   const handleAddNote = async () => {
     if (!activeNoteSoldierName || !noteInputText.trim()) return;
@@ -3062,15 +3062,6 @@ export default function RatingTable({
                             >
                               <HistoryIcon className="w-2.5 h-2.5" />
                               {selectedVersion === "current" ? "Projected / Notes" : "View Current"}
-                              {(() => {
-                                const noteCount = allNotes.filter(n => n.soldierName === r.name.trim().toLowerCase()).length;
-                                if (noteCount === 0) return null;
-                                return (
-                                  <span className="ml-0.5 px-1 bg-rose-600 text-white rounded-full text-[8px] font-black leading-tight">
-                                    {noteCount}
-                                  </span>
-                                );
-                              })()}
                               {expandedHistoryRecordId === r.id ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
                             </button>
                           )}
