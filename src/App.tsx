@@ -300,7 +300,8 @@ export default function App() {
 
   const handleCopyVersion = async (
     fromVer: "current" | "future" | "alternate" | string,
-    toVer: "current" | "future" | "alternate"
+    toVer: "current" | "future" | "alternate",
+    batchUpdates?: ArmyRatingRecord[]
   ) => {
     const currentScheme = schemes.find(s => s.id === activeSchemeId) || sharedScheme;
     
@@ -327,7 +328,7 @@ export default function App() {
             currentScheme?.effectiveAsOf || ""
           );
         }
-        await copyVersion(currentScheme?.userId || user?.uid || "guest", activeSchemeId, fromVer, toVer);
+        await copyVersion(currentScheme?.userId || user?.uid || "guest", activeSchemeId, fromVer, toVer, batchUpdates);
 
         if (toVer === "current" && proposedDateToUse) {
           await updateSchemeDates(activeSchemeId, { effectiveAsOf: proposedDateToUse });
@@ -341,13 +342,14 @@ export default function App() {
       // Guest mode
       let updated = [...records];
       
+      const oldCurrentRecords = records.filter(r => (r.version || "current") === toVer);
+
       if (toVer === "current") {
         // Archive current records first
-        const currentRecords = records.filter(r => (r.version || "current") === "current");
-        if (currentRecords.length > 0) {
+        if (oldCurrentRecords.length > 0) {
           const archiveDate = currentScheme?.effectiveAsOf || new Date().toISOString().split('T')[0];
           const archiveId = `archive_${archiveDate}_${Date.now()}`;
-          const archiveCloned: ArmyRatingRecord[] = currentRecords.map(r => ({
+          const archiveCloned: ArmyRatingRecord[] = oldCurrentRecords.map(r => ({
             ...r,
             id: `record_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`,
             version: archiveId
@@ -363,14 +365,45 @@ export default function App() {
         idMap[r.id] = `record_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
       });
       
-      const cloned: ArmyRatingRecord[] = sourceRecords.map(r => ({
-        ...r,
-        id: idMap[r.id],
-        raterId: idMap[r.raterId] || (r.raterId ? r.raterId : ""),
-        seniorRaterId: idMap[r.seniorRaterId] || (r.seniorRaterId ? r.seniorRaterId : ""),
-        reviewerId: idMap[r.reviewerId] || (r.reviewerId ? r.reviewerId : ""),
-        version: toVer
-      }));
+      const oldCurrentIdToNewCurrentIdMap: { [oldId: string]: string } = {};
+      if (batchUpdates && batchUpdates.length > 0) {
+        oldCurrentRecords.forEach(oldR => {
+          const sourceR = sourceRecords.find(sr => sr.name.trim().toLowerCase() === oldR.name.trim().toLowerCase() && sr.rank === oldR.rank);
+          if (sourceR && idMap[sourceR.id]) {
+            oldCurrentIdToNewCurrentIdMap[oldR.id] = idMap[sourceR.id];
+          }
+        });
+      }
+
+      const cloned: ArmyRatingRecord[] = sourceRecords.map(r => {
+        const newRecord = {
+          ...r,
+          id: idMap[r.id],
+          raterId: idMap[r.raterId] || (r.raterId ? r.raterId : ""),
+          seniorRaterId: idMap[r.seniorRaterId] || (r.seniorRaterId ? r.seniorRaterId : ""),
+          reviewerId: idMap[r.reviewerId] || (r.reviewerId ? r.reviewerId : ""),
+          version: toVer
+        };
+
+        if (batchUpdates && batchUpdates.length > 0) {
+          const oldCurrentMatches = oldCurrentRecords.find(ocr => ocr.name.trim().toLowerCase() === r.name.trim().toLowerCase() && ocr.rank === r.rank);
+          if (oldCurrentMatches) {
+            const update = batchUpdates.find(u => u.id === oldCurrentMatches.id);
+            if (update) {
+              newRecord.ncoerStatus = update.ncoerStatus;
+              newRecord.priorThru = update.priorThru;
+              newRecord.priorDueHqda = update.priorDueHqda;
+              if (update.lateRaterId) {
+                newRecord.lateRaterId = oldCurrentIdToNewCurrentIdMap[update.lateRaterId] || update.lateRaterId;
+              }
+              if (update.lateSeniorRaterId) {
+                newRecord.lateSeniorRaterId = oldCurrentIdToNewCurrentIdMap[update.lateSeniorRaterId] || update.lateSeniorRaterId;
+              }
+            }
+          }
+        }
+        return newRecord;
+      });
       
       const remaining = updated.filter(r => (r.version || "current") !== toVer);
       const finalUpdated = [...remaining, ...cloned];
@@ -1399,8 +1432,8 @@ export default function App() {
                   user={user}
                   selectedVersion={selectedVersion}
                   onChangeVersion={setSelectedVersion}
-                  onPromoteVersion={async (fromVer) => {
-                    await handleCopyVersion(fromVer, "current");
+                  onPromoteVersion={async (fromVer, batchUpdates) => {
+                    await handleCopyVersion(fromVer, "current", batchUpdates);
                     setSelectedVersion("current");
                   }}
                   activeSchemeName={currentScheme?.name || "Sample Rating Scheme"}

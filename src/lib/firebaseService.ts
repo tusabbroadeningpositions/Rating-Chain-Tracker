@@ -589,7 +589,8 @@ export async function copyVersion(
   userId: string,
   schemeId: string,
   fromVersion: "current" | "future" | "alternate" | string,
-  toVersion: "current" | "future" | "alternate"
+  toVersion: "current" | "future" | "alternate",
+  batchUpdates?: ArmyRatingRecord[]
 ): Promise<void> {
   const batch = writeBatch(db);
 
@@ -603,6 +604,8 @@ export async function copyVersion(
 
     const allRecords = snapshot.docs.map(d => d.data() as ArmyRatingRecord);
     const sourceRecords = allRecords.filter(r => (r.version || "current") === fromVersion);
+    const oldCurrentRecords = allRecords.filter(r => (r.version || "current") === toVersion);
+    
     const targetDocsToDelete = snapshot.docs.filter(docSnap => {
       const r = docSnap.data() as ArmyRatingRecord;
       return (r.version || "current") === toVersion;
@@ -617,6 +620,16 @@ export async function copyVersion(
       idMap[r.id] = doc(collection(db, RECORDS_COL)).id;
     });
 
+    const oldCurrentIdToNewCurrentIdMap: { [oldId: string]: string } = {};
+    if (batchUpdates && batchUpdates.length > 0) {
+      oldCurrentRecords.forEach(oldR => {
+        const sourceR = sourceRecords.find(sr => sr.name.trim().toLowerCase() === oldR.name.trim().toLowerCase() && sr.rank === oldR.rank);
+        if (sourceR && idMap[sourceR.id]) {
+          oldCurrentIdToNewCurrentIdMap[oldR.id] = idMap[sourceR.id];
+        }
+      });
+    }
+
     sourceRecords.forEach(record => {
       const newId = idMap[record.id];
       if (!newId) return;
@@ -629,6 +642,24 @@ export async function copyVersion(
         reviewerId: idMap[record.reviewerId] || (record.reviewerId ? record.reviewerId : ""),
         version: toVersion
       };
+
+      if (batchUpdates && batchUpdates.length > 0) {
+        const oldCurrentMatches = oldCurrentRecords.find(ocr => ocr.name.trim().toLowerCase() === record.name.trim().toLowerCase() && ocr.rank === record.rank);
+        if (oldCurrentMatches) {
+          const update = batchUpdates.find(u => u.id === oldCurrentMatches.id);
+          if (update) {
+            clonedRecord.ncoerStatus = update.ncoerStatus;
+            clonedRecord.priorThru = update.priorThru;
+            clonedRecord.priorDueHqda = update.priorDueHqda;
+            if (update.lateRaterId) {
+              clonedRecord.lateRaterId = oldCurrentIdToNewCurrentIdMap[update.lateRaterId] || update.lateRaterId;
+            }
+            if (update.lateSeniorRaterId) {
+              clonedRecord.lateSeniorRaterId = oldCurrentIdToNewCurrentIdMap[update.lateSeniorRaterId] || update.lateSeniorRaterId;
+            }
+          }
+        }
+      }
 
       const ref = doc(db, RECORDS_COL, newId);
       batch.set(ref, {

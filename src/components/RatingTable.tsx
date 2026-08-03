@@ -29,7 +29,7 @@ interface RatingTableProps {
   onChangeVersion?: (version: string) => void;
   activeSchemeName?: string;
   proposedEffectiveDate?: string;
-  onPromoteVersion?: (fromVersion: "future" | "alternate") => void;
+  onPromoteVersion?: (fromVersion: "future" | "alternate", batchUpdates?: ArmyRatingRecord[]) => void;
   onUpdateProposedEffectiveDate?: (dateVal: string) => void;
   effectiveAsOf?: string;
   onUpdateEffectiveAsOf?: (dateVal: string) => void;
@@ -4392,11 +4392,8 @@ export default function RatingTable({
                       cancelLabel: "CANCEL",
                       variant: "warning",
                       onConfirm: () => {
-                        // First reset them (local optimization, parent will overwrite anyway)
-                        batchPromoteIncomplete.forEach(r => {
-                          onUpdateRecord({ ...r, ncoerStatus: "" });
-                        });
-                        onPromoteVersion?.(batchPromoteVersion!);
+                        const resetUpdates = batchPromoteIncomplete.map(r => ({ ...r, ncoerStatus: "" }));
+                        onPromoteVersion?.(batchPromoteVersion!, resetUpdates);
                         setIsShowingBatchPromoteSummary(false);
                         setBatchPromoteIncomplete([]);
                         setBatchPromoteVersion(null);
@@ -4562,9 +4559,9 @@ export default function RatingTable({
                         cancelLabel: "CANCEL",
                         variant: "question",
                         onConfirm: () => {
-                          // Apply all updates first
-                          nextQueue.forEach(r => onUpdateRecord(r));
-                          onPromoteVersion?.(batchPromoteVersion!);
+                          // Note: we don't need to call onUpdateRecord here anymore, 
+                          // the parent component's handleCopyVersion will apply these updates.
+                          onPromoteVersion?.(batchPromoteVersion!, nextQueue);
                           setBatchLateSetupIndex(-1);
                           setBatchPromoteIncomplete([]);
                           setBatchPromoteVersion(null);
