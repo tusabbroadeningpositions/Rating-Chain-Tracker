@@ -3131,13 +3131,9 @@ export default function RatingTable({
                         <div className="flex items-start justify-between gap-1">
                           <div>
                             <div className="font-semibold text-slate-800 leading-tight">
-                              {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateRaterId 
-                                ? getRaterName(r.lateRaterId) 
-                                : getRaterName(r.raterId)}
+                              {getRaterName(r.raterId)}
                             </div>
-                            {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateRaterId ? (
-                               <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
-                            ) : r.raterId && r.raterEffectiveDate && (
+                            {r.raterId && r.raterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Eff: {r.raterEffectiveDate}
                               </div>
@@ -3172,13 +3168,9 @@ export default function RatingTable({
                         <div className="flex items-start justify-between gap-1">
                           <div>
                             <div className="font-semibold text-slate-800 leading-tight">
-                              {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateSeniorRaterId 
-                                ? getRaterName(r.lateSeniorRaterId) 
-                                : getRaterName(r.seniorRaterId)}
+                              {getRaterName(r.seniorRaterId)}
                             </div>
-                            {isCurrent && (ncoerInfo.status === "Late" || !!r.priorThru) && r.lateSeniorRaterId ? (
-                              <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
-                            ) : r.seniorRaterId && r.seniorRaterEffectiveDate && (
+                            {r.seniorRaterId && r.seniorRaterEffectiveDate && (
                               <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Eff: {r.seniorRaterEffectiveDate}
                               </div>
@@ -3538,25 +3530,17 @@ export default function RatingTable({
                                             </td>
                                             <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'raterId') || getDiffClass(r, projected, 'raterEffectiveDate')}`}>
                                               <div className="font-bold text-slate-700">
-                                                {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateRaterId 
-                                                  ? getRaterName(projected.lateRaterId) 
-                                                  : (projected.raterId ? getRaterName(projected.raterId) : "Unassigned")}
+                                                {projected.raterId ? getRaterName(projected.raterId) : "Unassigned"}
                                               </div>
-                                              {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateRaterId ? (
-                                                <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Rater</div>
-                                              ) : projected.raterEffectiveDate && (
+                                              {projected.raterEffectiveDate && (
                                                 <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.raterEffectiveDate}</div>
                                               )}
                                             </td>
                                             <td className={`px-3 py-3 border-r border-blue-100 ${getDiffClass(r, projected, 'seniorRaterId') || getDiffClass(r, projected, 'seniorRaterEffectiveDate')}`}>
                                               <div className="font-bold text-slate-700">
-                                                {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateSeniorRaterId 
-                                                  ? getRaterName(projected.lateSeniorRaterId) 
-                                                  : (projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned")}
+                                                {projected.seniorRaterId ? getRaterName(projected.seniorRaterId) : "Unassigned"}
                                               </div>
-                                              {(projected.ncoerStatus === "Late" || !!projected.priorThru) && projected.lateSeniorRaterId ? (
-                                                <div className="text-[8px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Late Senior Rater</div>
-                                              ) : projected.seniorRaterEffectiveDate && (
+                                              {projected.seniorRaterEffectiveDate && (
                                                 <div className="text-[9px] font-mono text-slate-500 mt-0.5">Eff: {projected.seniorRaterEffectiveDate}</div>
                                               )}
                                             </td>
