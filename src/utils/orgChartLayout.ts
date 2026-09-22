@@ -244,7 +244,7 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
  * - Group Leader: Blue background, white text
  * - Key Leader: Purple background, white text
  * - Section Leader: Yellow background, black text
- * - Master Musician: White background, black text
+ * - Master Musician: Light Blue background, black text
  * - Senior Musician: Grey background, black text
  * - Musician: Soft Off-white/Light Grey, black text
  */
@@ -304,10 +304,10 @@ export function getRoleColors(role: RatingRole | string): {
       };
     case RatingRole.MASTER_MUSICIAN:
       return {
-        bg: "bg-white",
+        bg: "bg-[#bfe9ff]", // Soft lighter blue
         text: "text-slate-950 font-bold",
         border: "border-slate-950 border-2",
-        hexBg: "FFFFFF",
+        hexBg: "BFE9FF",
         hexText: "000000",
         hexBorder: "000000"
       };
