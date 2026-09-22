@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank } from "../types";
+import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank, isLooksLikeId } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
 import { add90Days, calculateThruDate } from "../utils/dateUtils";
 import { Plus, Check, X, RotateCcw, ChevronDown, AlertTriangle } from "lucide-react";
@@ -154,7 +154,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       if (targetSrRec) {
         setSrManualRank(targetSrRec.rank || "MAJ");
         setSrManualName(targetSrRec.name);
-      } else {
+      } else if (!isLooksLikeId(srChangeProposal.proposedSrId)) {
         const rawSeniorRater = srChangeProposal.proposedSrId;
         const matchParentheses = rawSeniorRater.match(/^(.*?)\s*\(([^)]+)\)$/);
         if (matchParentheses) {
@@ -173,6 +173,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
             setSrManualName(formatNameToLastFirstRank(rawSeniorRater).replace(/\s*\([^)]+\)$/, ""));
           }
         }
+      } else {
+        setSrManualRank("MAJ");
+        setSrManualName("");
       }
     }
     
@@ -241,7 +244,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
         setSeniorRaterId(matchedSrRecord.id);
         setSrManualRank(matchedSrRecord.rank || "MAJ");
         setSrManualName(matchedSrRecord.name);
-      } else if (rawSeniorRater) {
+      } else if (rawSeniorRater && !isLooksLikeId(rawSeniorRater)) {
         setSeniorRaterId(rawSeniorRater);
         const matchParentheses = rawSeniorRater.match(/^(.*?)\s*\(([^)]+)\)$/);
         if (matchParentheses) {
@@ -261,7 +264,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
           }
         }
       } else {
-        setSeniorRaterId("");
+        setSeniorRaterId(rawSeniorRater || "");
         setSrManualRank("MAJ");
         setSrManualName("");
       }
@@ -437,7 +440,12 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
     searchSource.forEach(r => {
       [r.seniorRaterId, r.raterId, r.reviewerId, r.corNewRaterId].forEach(val => {
         if (val && val !== "-" && !searchSource.some(rec => rec.id === val)) {
-          if (!map.has(val)) {
+          // If val is an internal ID that doesn't exist in searchSource, do not add it as a manual person name!
+          if (isLooksLikeId(val)) {
+            return;
+          }
+          const formatted = formatNameToLastFirstRank(val);
+          if (formatted && !map.has(val)) {
             map.set(val, val);
           }
         }
@@ -446,7 +454,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
     if (srManualName.trim()) {
       const formatted = formatNameToLastFirstRank(srManualName.trim(), srManualRank.trim());
-      if (!searchSource.some(rec => rec.id === formatted)) {
+      if (formatted && !searchSource.some(rec => rec.id === formatted)) {
         map.set(formatted, formatted);
       }
     }
@@ -460,6 +468,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
     availableRaters.forEach(r => {
       const formatted = formatNameToLastFirstRank(r.name, r.rank);
+      if (!formatted) return;
       list.push({
         id: r.id,
         label: `${formatted} - ${r.role}`,
@@ -469,6 +478,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
     manualSeniorRaters.forEach(m => {
       const formatted = formatNameToLastFirstRank(m);
+      if (!formatted) return;
       list.push({
         id: m,
         label: formatted,
@@ -484,6 +494,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
     availableRaters.forEach(r => {
       const formatted = formatNameToLastFirstRank(r.name, r.rank);
+      if (!formatted) return;
       list.push({
         id: r.id,
         label: formatted,
@@ -493,6 +504,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
 
     manualSeniorRaters.forEach(m => {
       const formatted = formatNameToLastFirstRank(m);
+      if (!formatted) return;
       list.push({
         id: m,
         label: formatted,

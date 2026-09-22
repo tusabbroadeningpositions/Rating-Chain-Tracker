@@ -229,8 +229,7 @@ export function drawOrgChartSlide(
   if (organized.oic) {
     const oic = organized.oic;
     const colors = getRoleColors(oic.role);
-    const dateToUse = formatArmyDate(oic.thru);
-    const label = `${oic.rank} ${oic.name}\n${dateToUse}`;
+    const label = `${oic.rank} ${oic.name}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -261,8 +260,7 @@ export function drawOrgChartSlide(
   if (organized.elementLeader) {
     const leader = organized.elementLeader;
     const colors = getRoleColors(leader.role);
-    const dateToUse = formatArmyDate(leader.thru);
-    const label = `${leader.rank} ${leader.name}\n${dateToUse}`;
+    const label = `${leader.rank} ${leader.name}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -295,8 +293,7 @@ export function drawOrgChartSlide(
 
     const drawColumn = (col: any, xCol: number, wCol: number) => {
       const headerColors = getRoleColors(col.header.role);
-      const dateToUse = formatArmyDate(col.header.thru);
-      const headerLabel = `${col.header.rank} ${col.header.name}\n${dateToUse}`;
+      const headerLabel = `${col.header.rank} ${col.header.name}`;
 
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xCol,
@@ -330,8 +327,7 @@ export function drawOrgChartSlide(
           const xLane = xCol + lIndex * (laneSpace + scaledLaneGap);
           const leader = lane.laneLeader;
           const leaderColors = getRoleColors(leader.role);
-          const leaderDate = formatArmyDate(leader.thru);
-          const leaderLabel = `${leader.rank} ${leader.name}\n${leaderDate}`;
+          const leaderLabel = `${leader.rank} ${leader.name}`;
 
           const xLeader = xLane + (laneSpace - wCard) / 2;
           const yLeader = yVerticalStackStart;
@@ -377,8 +373,7 @@ export function drawOrgChartSlide(
               const xSub = xSubsStart + sIndex * (wCard + cardSubGap);
               const ySub = yVerticalStackStart + cardHeight + cardRowGap;
               const subColors = getRoleColors(sub.role);
-              const subDate = formatArmyDate(sub.thru);
-              const subLabel = `${sub.rank} ${sub.name}\n${subDate}`;
+              const subLabel = `${sub.rank} ${sub.name}`;
 
               slide.addShape(pptx.ShapeType.roundRect, {
                 x: xSub,
@@ -433,9 +428,8 @@ export function drawOrgChartSlide(
       const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
       const leaderColors = getRoleColors(group.leader.role);
-      const leaderDate = formatArmyDate(group.leader.thru);
       const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? ` (${group.leader.keyLeaderTitle.toUpperCase()})` : "";
-      const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}\n${leaderDate}`;
+      const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}`;
 
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xGroup,

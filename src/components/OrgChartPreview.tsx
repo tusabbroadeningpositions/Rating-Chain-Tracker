@@ -835,7 +835,6 @@ export default function OrgChartPreview({
                         style={{ width: `${totalWidthNeeded}px` }}
                       >
                         <div className="text-xs font-bold uppercase tracking-widest">{oic.rank} {oic.name}</div>
-                        <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(oic)}</div>
                       </div>
                     </div>
                   );
@@ -863,7 +862,6 @@ export default function OrgChartPreview({
                         style={{ width: `${totalWidthNeeded}px` }}
                       >
                         <div className="text-xs font-bold uppercase tracking-widest">{leader.rank} {leader.name}</div>
-                        <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(leader)}</div>
                       </div>
                     </div>
                   );
@@ -905,7 +903,6 @@ export default function OrgChartPreview({
                                     }`}
                                   >
                                     <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
-                                    <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(header)}</div>
                                   </div>
 
                                   {/* Subordinates vertical stack */}
@@ -930,7 +927,6 @@ export default function OrgChartPreview({
                                             >
                                               <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                 <div className={getVerticalNameClass(l.rank, l.name)}>{l.rank} {l.name}</div>
-                                                <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(l)}</div>
                                               </div>
                                             </div>
                                             {lane.subordinates.length > 0 && (
@@ -952,7 +948,6 @@ export default function OrgChartPreview({
                                                     >
                                                       <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                         <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
-                                                        <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(sub)}</div>
                                                       </div>
                                                     </div>
                                                   );
@@ -1001,7 +996,6 @@ export default function OrgChartPreview({
                                   {leader.keyLeaderTitle || "Key Leader"}
                                 </div>
                               )}
-                              <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(leader)}</div>
                             </div>
 
                             {groupBlock.columns.length > 0 && (
@@ -1024,7 +1018,6 @@ export default function OrgChartPreview({
                                         }`}
                                       >
                                         <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
-                                        <div className="text-[10px] font-mono mt-0.5 opacity-90">{getRecordDate(header)}</div>
                                       </div>
 
                                       {col.lanes.length > 0 && (
@@ -1048,7 +1041,6 @@ export default function OrgChartPreview({
                                                 >
                                                   <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                     <div className={getVerticalNameClass(leader.rank, leader.name)}>{leader.rank} {leader.name}</div>
-                                                    <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(leader)}</div>
                                                   </div>
                                                 </div>
                                                 {lane.subordinates.length > 0 && (
@@ -1071,7 +1063,6 @@ export default function OrgChartPreview({
                                                         >
                                                           <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                             <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
-                                                            <div className="text-[8px] font-mono mt-1 opacity-90">{getRecordDate(sub)}</div>
                                                           </div>
                                                         </div>
                                                       );
@@ -1113,7 +1104,6 @@ export default function OrgChartPreview({
                           className={`px-3 py-1.5 rounded border cursor-pointer text-xs font-bold ${colors.bg} ${colors.text} ${colors.border} hover:scale-102 transition-all flex items-center gap-2`}
                         >
                           <span>{orphan.rank} {orphan.name}</span>
-                          <span className="text-[10px] font-mono opacity-80">{getRecordDate(orphan)}</span>
                         </div>
                       );
                     })}

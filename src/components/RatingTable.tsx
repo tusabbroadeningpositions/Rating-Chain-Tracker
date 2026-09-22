@@ -7,7 +7,7 @@ import React, { useState, useRef, useMemo, useEffect } from "react";
 import { jsPDF } from "jspdf";
 // @ts-ignore
 import XLSX from "xlsx-js-style";
-import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank, Note } from "../types";
+import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank, isLooksLikeId, Note } from "../types";
 import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
@@ -488,7 +488,8 @@ export default function RatingTable({
       return r.name;
     }
     // If not found by ID, it might be a raw name string from import or manual entry
-    return formatNameToLastFirstRank(raterId);
+    const formatted = formatNameToLastFirstRank(raterId);
+    return formatted || (isLooksLikeId(raterId) ? "Unassigned" : raterId);
   };
 
   const getRaterNameOnly = (raterId: string) => {
@@ -664,7 +665,7 @@ export default function RatingTable({
               rank: found.rank || "",
               isCurrent: found.version === "current" || !found.version
             });
-          } else {
+          } else if (!isLooksLikeId(id)) {
             allCandidates.push({
               id,
               name: id,

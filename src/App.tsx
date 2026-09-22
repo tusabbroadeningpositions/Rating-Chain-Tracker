@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { ArmyRatingRecord, RatingRole, RatingScheme, formatNameToLastFirstRank } from "./types";
+import { ArmyRatingRecord, RatingRole, RatingScheme, formatNameToLastFirstRank, isLooksLikeId } from "./types";
 import { INITIAL_RECORDS, generateSampleRecords } from "./sampleData";
 import RatingForm from "./components/RatingForm";
 import RatingTable from "./components/RatingTable";
@@ -444,7 +444,8 @@ export default function App() {
       }
       return r.name;
     }
-    return formatNameToLastFirstRank(raterId);
+    const formatted = formatNameToLastFirstRank(raterId);
+    return formatted || (isLooksLikeId(raterId) ? "Unassigned" : raterId);
   };
 
   // Add or edit a record

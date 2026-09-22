@@ -84,10 +84,28 @@ export interface OrgNode {
 
 export const SENIOR_RATER_RANKS = ["MAJ", "LTC", "COL", "CPT", "1LT", "2LT", "SGM", "MSG", "SFC", "SSG", "CW5", "CW4", "CW3", "CW2", "WO1"];
 
+export function isLooksLikeId(val: string): boolean {
+  if (!val) return false;
+  const s = val.trim();
+  if (s === "-" || s === "") return true;
+  // Common internal id prefixes
+  if (/^(imported_|record_|rec_|proj_|alt_|note-|hist_|oic-|el-|gl-|sl-|sm-|m-)/i.test(s)) return true;
+  // UUID pattern (8-4-4-4-12)
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;
+  // Long single token alphanumeric/hash without spaces or commas (Firestore doc ID, random hash, etc.)
+  if (!s.includes(" ") && !s.includes(",") && s.length >= 12 && /^[a-zA-Z0-9_-]+$/.test(s)) return true;
+  return false;
+}
+
 export function formatNameToLastFirstRank(nameStr: string, rankStr: string = ""): string {
   if (!nameStr) return "";
   let raw = nameStr.trim();
   if (!raw) return "";
+
+  // If this string is clearly an internal ID that couldn't be resolved, don't format it as a name
+  if (isLooksLikeId(raw)) {
+    return "";
+  }
 
   let extractedRank = rankStr ? rankStr.trim() : "";
 
