@@ -239,7 +239,7 @@ export function organizeChartData(records: ArmyRatingRecord[]): OrganizedChart {
 /**
  * Get color scheme based on the RatingRole.
  * Matches the colors of the attached image:
- * - OIC: White background with black text
+ * - OIC: Red background, black text
  * - Element Leader: Lime Green background, black text
  * - Group Leader: Blue background, white text
  * - Key Leader: Purple background, white text
@@ -259,10 +259,10 @@ export function getRoleColors(role: RatingRole | string): {
   switch (role) {
     case RatingRole.OIC:
       return {
-        bg: "bg-white",
+        bg: "bg-[#ff0000]", // Exact red
         text: "text-slate-950 font-bold",
         border: "border-slate-950 border-2",
-        hexBg: "FFFFFF",
+        hexBg: "FF0000",
         hexText: "000000",
         hexBorder: "000000"
       };
