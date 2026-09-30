@@ -7,18 +7,31 @@ import pptxgen from "pptxgenjs";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "./orgChartLayout";
 
+function isPinkKeyLeaderNode(node: ArmyRatingRecord): boolean {
+  return !!(node.isUnitKeyLeader || node.role === RatingRole.KEY_LEADER || node.role === "Key Leader" || (node.keyLeaderTitle && node.keyLeaderTitle.trim().length > 0));
+}
+
+function getNodeDisplayColors(node: ArmyRatingRecord) {
+  if (isPinkKeyLeaderNode(node)) {
+    return getRoleColors(RatingRole.KEY_LEADER);
+  }
+  return getRoleColors(node.role);
+}
+
 function getNodePptxLabel(node: ArmyRatingRecord): string {
   const titles: string[] = [];
-  if (node.role === RatingRole.KEY_LEADER && node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
+  const isPink = isPinkKeyLeaderNode(node);
+
+  if (node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
     titles.push(node.keyLeaderTitle.trim());
+  } else if (isPink && (node.role === RatingRole.KEY_LEADER || node.role === "Key Leader")) {
+    titles.push("KEY LEADER");
   }
+
   if (node.elementKeyLeaderTitle && node.elementKeyLeaderTitle.trim()) {
     if (!titles.includes(node.elementKeyLeaderTitle.trim())) {
       titles.push(node.elementKeyLeaderTitle.trim());
     }
-  }
-  if (titles.length === 0 && node.role === RatingRole.KEY_LEADER) {
-    titles.push("KEY LEADER");
   }
 
   if (titles.length > 0) {
@@ -248,7 +261,7 @@ export function drawOrgChartSlide(
   // --- Draw Row 1: OIC ---
   if (organized.oic) {
     const oic = organized.oic;
-    const colors = getRoleColors(oic.role);
+    const colors = getNodeDisplayColors(oic);
     const label = getNodePptxLabel(oic);
 
     slide.addShape(pptx.ShapeType.roundRect, {
@@ -279,7 +292,7 @@ export function drawOrgChartSlide(
   // --- Draw Row 2: Element Leader ---
   if (organized.elementLeader) {
     const leader = organized.elementLeader;
-    const colors = getRoleColors(leader.role);
+    const colors = getNodeDisplayColors(leader);
     const label = getNodePptxLabel(leader);
 
     slide.addShape(pptx.ShapeType.roundRect, {
@@ -312,7 +325,7 @@ export function drawOrgChartSlide(
     let currentX = startX;
 
     const drawColumn = (col: any, xCol: number, wCol: number) => {
-      const headerColors = getRoleColors(col.header.role);
+      const headerColors = getNodeDisplayColors(col.header);
       const headerLabel = getNodePptxLabel(col.header);
 
       slide.addShape(pptx.ShapeType.roundRect, {
@@ -346,7 +359,7 @@ export function drawOrgChartSlide(
         col.lanes.forEach((lane: any, lIndex: number) => {
           const xLane = xCol + lIndex * (laneSpace + scaledLaneGap);
           const leader = lane.laneLeader;
-          const leaderColors = getRoleColors(leader.role);
+          const leaderColors = getNodeDisplayColors(leader);
           const leaderLabel = getNodePptxLabel(leader);
 
           const xLeader = xLane + (laneSpace - wCard) / 2;
@@ -392,7 +405,7 @@ export function drawOrgChartSlide(
             lane.subordinates.forEach((sub: any, sIndex: number) => {
               const xSub = xSubsStart + sIndex * (wCard + cardSubGap);
               const ySub = yVerticalStackStart + cardHeight + cardRowGap;
-              const subColors = getRoleColors(sub.role);
+              const subColors = getNodeDisplayColors(sub);
               const subLabel = getNodePptxLabel(sub);
 
               slide.addShape(pptx.ShapeType.roundRect, {
@@ -447,7 +460,7 @@ export function drawOrgChartSlide(
     organized.groups.forEach((group) => {
       const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
-      const leaderColors = getRoleColors(group.leader.role);
+      const leaderColors = getNodeDisplayColors(group.leader);
       const leaderLabel = getNodePptxLabel(group.leader);
 
       slide.addShape(pptx.ShapeType.roundRect, {

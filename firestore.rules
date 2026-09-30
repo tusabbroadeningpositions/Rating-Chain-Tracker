@@ -70,6 +70,7 @@ service cloud.firestore {
              (!data.keys().hasAny(['submissionType']) || data.submissionType == null || (data.submissionType is string && data.submissionType.size() <= 200)) &&
              (!data.keys().hasAny(['version']) || data.version == null || (data.version is string && data.version.size() <= 100)) &&
              (!data.keys().hasAny(['elementKeyLeaderTitle']) || data.elementKeyLeaderTitle == null || (data.elementKeyLeaderTitle is string && data.elementKeyLeaderTitle.size() <= 400)) &&
+             (!data.keys().hasAny(['isUnitKeyLeader']) || data.isUnitKeyLeader is bool) &&
              (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
              (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
              (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
@@ -214,7 +215,7 @@ service cloud.firestore {
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
                         'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
-                        'elementKeyLeaderTitle', 'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
+                        'elementKeyLeaderTitle', 'isUnitKeyLeader', 'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
                         'lateRaterId', 'lateSeniorRaterId',
                         'priorThru', 'priorDueHqda', 'isCustomStatus', 'corNewRaterId', 
                         'corEffectiveDate', 'parentRecordId', 'isHistoryEntry', 'updatedAt'

@@ -133,6 +133,10 @@
           "type": "string",
           "description": "Element Key Leader title (e.g. Music Director, Lead Producer, or custom)."
         },
+        "isUnitKeyLeader": {
+          "type": "boolean",
+          "description": "Flag indicating if the soldier is designated as a Unit Key Leader (pink bubble map card)."
+        },
         "keyLeaderTitle": {
           "type": "string",
           "description": "Custom title for key leader positions."

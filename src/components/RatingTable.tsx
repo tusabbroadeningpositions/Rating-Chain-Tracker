@@ -3099,16 +3099,28 @@ export default function RatingTable({
                       {/* Principal Duty Title */}
                       <td className={`px-3 py-2 border-r border-slate-200 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
                         <div className="flex flex-col items-start gap-1">
+                          {/* 1. Principal Duty Title badge */}
                           <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
                             {r.role}
                           </span>
-                          {r.keyLeaderTitle && r.role === RatingRole.KEY_LEADER && (
-                            <div className="text-[10px] font-semibold text-purple-800 dark:text-purple-300 pl-1 leading-tight">
+
+                          {/* 2. Key Leader badge (pink) underneath if Unit Key Leader and role is not already Key Leader */}
+                          {(r.isUnitKeyLeader || (r.role !== RatingRole.KEY_LEADER && r.role !== "Key Leader" && !!r.keyLeaderTitle)) && r.role !== RatingRole.KEY_LEADER && r.role !== "Key Leader" && (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold border bg-[#d254d2] text-slate-950 border-slate-950 shadow-xs">
+                              Key Leader
+                            </span>
+                          )}
+
+                          {/* 3. Unit Key Leader Title in pink letters underneath */}
+                          {r.keyLeaderTitle && r.keyLeaderTitle.trim().length > 0 && (
+                            <div className="text-[10px] font-bold text-[#b82fb8] dark:text-pink-400 pl-0.5 leading-tight">
                               {r.keyLeaderTitle}
                             </div>
                           )}
-                          {r.elementKeyLeaderTitle && (
-                            <div className="text-[10px] font-bold text-green-600 uppercase tracking-wider pl-1 leading-tight">
+
+                          {/* 4. Element Key Leader roles in Green letters */}
+                          {r.elementKeyLeaderTitle && r.elementKeyLeaderTitle.trim().length > 0 && (
+                            <div className="text-[10px] font-bold text-green-600 uppercase tracking-wider pl-0.5 leading-tight">
                               {r.elementKeyLeaderTitle}
                             </div>
                           )}

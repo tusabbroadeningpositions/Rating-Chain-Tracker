@@ -31,6 +31,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [elementKeyLeaderTitle, setElementKeyLeaderTitle] = useState("");
   const [customKeyLeaderTitle, setCustomKeyLeaderTitle] = useState("");
   const [isCustomKeyLeader, setIsCustomKeyLeader] = useState(false);
+  const [isUnitKeyLeader, setIsUnitKeyLeader] = useState(false);
   const [keyLeaderTitle, setKeyLeaderTitle] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [thruDate, setThruDate] = useState("");
@@ -202,6 +203,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
         setIsCustomKeyLeader(false);
         setCustomKeyLeaderTitle("");
       }
+      const isUkl = editingRecord.isUnitKeyLeader ?? (!!editingRecord.keyLeaderTitle || editingRecord.role === RatingRole.KEY_LEADER || editingRecord.role === "Key Leader");
+      setIsUnitKeyLeader(isUkl);
       setKeyLeaderTitle(editingRecord.keyLeaderTitle || "");
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
@@ -402,7 +405,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       corEffectiveDate: submissionType === "COR" ? corEffectiveDate : "",
       role,
       elementKeyLeaderTitle: elementKeyLeaderTitle.trim(),
-      keyLeaderTitle: keyLeaderTitle.trim(),
+      isUnitKeyLeader,
+      keyLeaderTitle: isUnitKeyLeader ? keyLeaderTitle.trim() : "",
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
       lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateRaterId : undefined,
@@ -756,23 +760,49 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
           </div>
         </div>
 
-        {/* Key Leader Custom Title (When Key Leader is selected as Principal Duty Title) */}
-        {(role === RatingRole.KEY_LEADER || role === "Key Leader") && (
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
-              <span>Key Leader Custom Title</span>
-              <span className="text-[9px] text-purple-600 font-medium lowercase">(Role title • Displays on bubble & roster)</span>
-            </label>
+        {/* Unit Key Leader Checkbox & Title */}
+        <div className="rounded-md border border-pink-200/90 bg-pink-50/50 p-2.5 space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
-              id="input-key-leader-title"
-              type="text"
-              placeholder="e.g. Operations Coordinator, OIC Assistant, Lead Planner..."
-              value={keyLeaderTitle}
-              onChange={(e) => setKeyLeaderTitle(e.target.value)}
-              className="w-full px-3 py-1.5 border border-purple-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 bg-purple-50/30 font-semibold"
+              id="checkbox-unit-key-leader"
+              type="checkbox"
+              checked={isUnitKeyLeader || role === RatingRole.KEY_LEADER || role === "Key Leader"}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setIsUnitKeyLeader(checked);
+                if (!checked && (role === RatingRole.KEY_LEADER || role === "Key Leader")) {
+                  // If they uncheck while role was Key Leader, keep role as is or let them toggle
+                }
+                if (!checked) {
+                  setKeyLeaderTitle("");
+                }
+              }}
+              className="w-4 h-4 text-pink-600 rounded border-pink-300 focus:ring-pink-500 cursor-pointer accent-pink-600"
             />
-          </div>
-        )}
+            <span className="text-xs font-bold text-pink-950 uppercase tracking-wide">
+              Unit Key Leader?
+            </span>
+            <span className="text-[10px] text-pink-700 font-medium lowercase">
+              (Displays pink bubble at Principal Duty level)
+            </span>
+          </label>
+
+          {(isUnitKeyLeader || role === RatingRole.KEY_LEADER || role === "Key Leader") && (
+            <div className="space-y-1 pl-6 pt-1 border-t border-pink-200/60 animate-fadeIn">
+              <label className="text-[10px] font-bold text-pink-800 uppercase tracking-wider block">
+                Unit Key Leader Title
+              </label>
+              <input
+                id="input-key-leader-title"
+                type="text"
+                placeholder="e.g. Operations Coordinator, Enlisted Band Leader, OIC Assistant..."
+                value={keyLeaderTitle}
+                onChange={(e) => setKeyLeaderTitle(e.target.value)}
+                className="w-full px-3 py-1.5 border border-pink-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-pink-500 text-slate-800 bg-white font-semibold"
+              />
+            </div>
+          )}
+        </div>
 
         {/* Element Key Leader Title (Available for all soldiers) */}
         <div className="space-y-1">

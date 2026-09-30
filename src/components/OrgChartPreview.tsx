@@ -38,18 +38,31 @@ const getVerticalNameClass = (rank: string, name: string) => {
   }
 };
 
+const isPinkKeyLeaderNode = (node: ArmyRatingRecord) => {
+  return !!(node.isUnitKeyLeader || node.role === RatingRole.KEY_LEADER || node.role === "Key Leader" || (node.keyLeaderTitle && node.keyLeaderTitle.trim().length > 0));
+};
+
+const getNodeDisplayColors = (node: ArmyRatingRecord) => {
+  if (isPinkKeyLeaderNode(node)) {
+    return getRoleColors(RatingRole.KEY_LEADER);
+  }
+  return getRoleColors(node.role);
+};
+
 const renderNodeTitles = (node: ArmyRatingRecord, isVertical: boolean = false) => {
   const titles: string[] = [];
-  if (node.role === RatingRole.KEY_LEADER && node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
+  const isPink = isPinkKeyLeaderNode(node);
+
+  if (node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
     titles.push(node.keyLeaderTitle.trim());
+  } else if (isPink && (node.role === RatingRole.KEY_LEADER || node.role === "Key Leader")) {
+    titles.push("Key Leader");
   }
+
   if (node.elementKeyLeaderTitle && node.elementKeyLeaderTitle.trim()) {
     if (!titles.includes(node.elementKeyLeaderTitle.trim())) {
       titles.push(node.elementKeyLeaderTitle.trim());
     }
-  }
-  if (titles.length === 0 && node.role === RatingRole.KEY_LEADER) {
-    titles.push("Key Leader");
   }
 
   if (titles.length === 0) return null;
@@ -849,10 +862,9 @@ export default function OrgChartPreview({
               {organized.oic && (
                 (() => {
                   const oic = organized.oic;
-                  const roleColors = getRoleColors(oic.role);
+                  const roleColors = getNodeDisplayColors(oic);
                   const activeRelation = getNodeChainRelation(oic.id);
                   const isHighlighted = activeRelation !== null;
-                  const oicTitle = oic.elementKeyLeaderTitle || oic.keyLeaderTitle;
                   
                   return (
                     <div className="flex justify-center w-full">
@@ -878,7 +890,7 @@ export default function OrgChartPreview({
               {organized.elementLeader && (
                 (() => {
                   const leader = organized.elementLeader;
-                  const roleColors = getRoleColors(leader.role);
+                  const roleColors = getNodeDisplayColors(leader);
                   const activeRelation = getNodeChainRelation(leader.id);
                   const isHighlighted = activeRelation !== null;
 
@@ -921,7 +933,7 @@ export default function OrgChartPreview({
                           <div className="grid gap-3" style={{ gridTemplateColumns: organized.directColumns.map(col => `${getColEstimatedWidth(col)}px`).join(" ") }}>
                             {organized.directColumns.map((col) => {
                               const header = col.header;
-                              const headerColors = getRoleColors(header.role);
+                              const headerColors = getNodeDisplayColors(header);
                               const activeRel = getNodeChainRelation(header.id);
                               const headerHighlighted = activeRel !== null;
 
@@ -945,7 +957,7 @@ export default function OrgChartPreview({
                                     <div className="flex gap-4 justify-center w-full">
                                       {col.lanes.map((lane) => {
                                         const l = lane.laneLeader;
-                                        const lColors = getRoleColors(l.role);
+                                        const lColors = getNodeDisplayColors(l);
                                         const lRel = getNodeChainRelation(l.id);
                                         const lHighlighted = lRel !== null;
 
@@ -968,7 +980,7 @@ export default function OrgChartPreview({
                                             {lane.subordinates.length > 0 && (
                                               <div className="flex gap-1 justify-center">
                                                 {lane.subordinates.map((sub) => {
-                                                  const sColors = getRoleColors(sub.role);
+                                                  const sColors = getNodeDisplayColors(sub);
                                                   const sRel = getNodeChainRelation(sub.id);
                                                   const sHighlighted = sRel !== null;
                                                   return (
@@ -1006,7 +1018,7 @@ export default function OrgChartPreview({
                       {/* Render Main Group Blocks */}
                       {organized.groups.map((groupBlock, gIndex) => {
                         const leader = groupBlock.leader;
-                        const roleColors = getRoleColors(leader.role);
+                        const roleColors = getNodeDisplayColors(leader);
                         const activeRelation = getNodeChainRelation(leader.id);
                         const isHighlighted = activeRelation !== null;
                         const groupWidth = groupWidths[gIndex];
@@ -1035,7 +1047,7 @@ export default function OrgChartPreview({
                               <div className="grid gap-3" style={{ gridTemplateColumns: groupBlock.columns.map(col => `${getColEstimatedWidth(col)}px`).join(" ") }}>
                                 {groupBlock.columns.map((col) => {
                                   const header = col.header;
-                                  const headerColors = getRoleColors(header.role);
+                                  const headerColors = getNodeDisplayColors(header);
                                   const activeRel = getNodeChainRelation(header.id);
                                   const headerHighlighted = activeRel !== null;
 
@@ -1058,7 +1070,7 @@ export default function OrgChartPreview({
                                         <div className="flex gap-4 justify-center w-full">
                                           {col.lanes.map((lane) => {
                                             const laneLeader = lane.laneLeader;
-                                            const laneLeaderColors = getRoleColors(laneLeader.role);
+                                            const laneLeaderColors = getNodeDisplayColors(laneLeader);
                                             const laneLeaderRel = getNodeChainRelation(laneLeader.id);
                                             const laneLeaderHighlighted = laneLeaderRel !== null;
 
@@ -1081,7 +1093,7 @@ export default function OrgChartPreview({
                                                 {lane.subordinates.length > 0 && (
                                                   <div className="flex gap-1 justify-center">
                                                     {lane.subordinates.map((sub) => {
-                                                      const subColors = getRoleColors(sub.role);
+                                                      const subColors = getNodeDisplayColors(sub);
                                                       const subRel = getNodeChainRelation(sub.id);
                                                       const subHighlighted = subRel !== null;
 
@@ -1132,7 +1144,7 @@ export default function OrgChartPreview({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {organized.unassigned.map((orphan) => {
-                      const colors = getRoleColors(orphan.role);
+                      const colors = getNodeDisplayColors(orphan);
                       return (
                         <div
                           key={orphan.id}

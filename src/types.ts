@@ -53,7 +53,8 @@ export interface ArmyRatingRecord {
   corEffectiveDate?: string; // Effective Date for Change of Rater (YYYY-MM-DD)
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
   elementKeyLeaderTitle?: string; // Element Key Leader Title (e.g. Music Director, Lead Producer, or custom)
-  keyLeaderTitle?: string; // Custom title for key leader positions
+  isUnitKeyLeader?: boolean; // Checkbox indicating soldier is a Unit Key Leader (pink bubble)
+  keyLeaderTitle?: string; // Custom title for unit key leader positions
   version?: "current" | "future" | "alternate" | string; // Version profile draft
   ncoerStatus?: string; // NCOER Status
   ncoerStatusDate?: string; // NCOER Status change date/timestamp (YYYY-MM-DD)
