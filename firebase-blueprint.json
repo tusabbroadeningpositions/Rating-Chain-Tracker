@@ -129,6 +129,10 @@
           "type": "string",
           "description": "Principal Duty Title / Role in the organization."
         },
+        "elementKeyLeaderTitle": {
+          "type": "string",
+          "description": "Element Key Leader title (e.g. Music Director, Lead Producer, or custom)."
+        },
         "keyLeaderTitle": {
           "type": "string",
           "description": "Custom title for key leader positions."
@@ -263,6 +267,8 @@
             "reviewerId": { "type": "string" },
             "submissionType": { "type": "string" },
             "role": { "type": "string" },
+            "elementKeyLeaderTitle": { "type": "string" },
+            "keyLeaderTitle": { "type": "string" },
             "ncoerStatus": { "type": "string" },
             "ncoerStatusDate": { "type": "string" },
             "isCustomStatus": { "type": "boolean" },

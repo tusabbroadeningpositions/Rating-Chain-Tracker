@@ -28,6 +28,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [dutyMosc, setDutyMosc] = useState("42S3O");
   const [element, setElement] = useState("Ceremonial");
   const [role, setRole] = useState<RatingRole | string>(RatingRole.MUSICIAN);
+  const [elementKeyLeaderTitle, setElementKeyLeaderTitle] = useState("");
+  const [customKeyLeaderTitle, setCustomKeyLeaderTitle] = useState("");
+  const [isCustomKeyLeader, setIsCustomKeyLeader] = useState(false);
   const [keyLeaderTitle, setKeyLeaderTitle] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [thruDate, setThruDate] = useState("");
@@ -190,7 +193,16 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setDutyMosc(editingRecord.dutyMosc);
       setElement(editingRecord.element);
       setRole(editingRecord.role);
-      setKeyLeaderTitle(editingRecord.keyLeaderTitle || "");
+      const eklt = editingRecord.elementKeyLeaderTitle || editingRecord.keyLeaderTitle || "";
+      setElementKeyLeaderTitle(eklt);
+      if (eklt && eklt !== "Music Director" && eklt !== "Lead Producer") {
+        setIsCustomKeyLeader(true);
+        setCustomKeyLeaderTitle(eklt);
+      } else {
+        setIsCustomKeyLeader(false);
+        setCustomKeyLeaderTitle("");
+      }
+      setKeyLeaderTitle(eklt);
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
       // Auto-populate dueHqda if it's blank but thru is present
@@ -282,6 +294,9 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setDutyMosc("42S3O");
       setElement("Ceremonial");
       setRole(RatingRole.MUSICIAN);
+      setElementKeyLeaderTitle("");
+      setCustomKeyLeaderTitle("");
+      setIsCustomKeyLeader(false);
       setKeyLeaderTitle("");
       
       // Default to 1-year dates or relevant dates
@@ -386,7 +401,8 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       corNewRaterId: submissionType === "COR" ? corNewRaterId : "",
       corEffectiveDate: submissionType === "COR" ? corEffectiveDate : "",
       role,
-      keyLeaderTitle: role === RatingRole.KEY_LEADER ? keyLeaderTitle : "",
+      elementKeyLeaderTitle: elementKeyLeaderTitle.trim(),
+      keyLeaderTitle: elementKeyLeaderTitle.trim(),
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
       lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateRaterId : undefined,
@@ -738,21 +754,57 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
               />
             )}
           </div>
-          {role === RatingRole.KEY_LEADER && (
-            <div className="mt-2 space-y-1">
-              <label className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">
-                Key Leader Custom Title (will appear on bubble)
-              </label>
+        </div>
+
+        {/* Element Key Leader Title */}
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center justify-between">
+            <span>Element Key Leader Title</span>
+            <span className="text-[9px] text-slate-400 font-normal lowercase">(Optional • Displays on bubble)</span>
+          </label>
+          <div className="flex gap-2">
+            <select
+              id="select-element-key-leader-title"
+              value={
+                isCustomKeyLeader
+                  ? "custom"
+                  : (!elementKeyLeaderTitle
+                      ? ""
+                      : (elementKeyLeaderTitle === "Music Director" || elementKeyLeaderTitle === "Lead Producer")
+                        ? elementKeyLeaderTitle
+                        : "custom")
+              }
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "custom") {
+                  setIsCustomKeyLeader(true);
+                  setElementKeyLeaderTitle(customKeyLeaderTitle || "");
+                } else {
+                  setIsCustomKeyLeader(false);
+                  setElementKeyLeaderTitle(val);
+                }
+              }}
+              className="flex-1 px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 font-semibold bg-slate-50/50"
+            >
+              <option value="">None (Standard)</option>
+              <option value="Music Director">Music Director</option>
+              <option value="Lead Producer">Lead Producer</option>
+              <option value="custom">Other / Custom Title</option>
+            </select>
+            {(isCustomKeyLeader || (elementKeyLeaderTitle !== "" && elementKeyLeaderTitle !== "Music Director" && elementKeyLeaderTitle !== "Lead Producer")) && (
               <input
-                id="input-key-leader-title"
+                id="input-custom-key-leader-title"
                 type="text"
-                placeholder="e.g. First Sergeant, Drum Major"
-                value={keyLeaderTitle}
-                onChange={(e) => setKeyLeaderTitle(e.target.value)}
-                className="w-full px-3 py-1.5 border border-purple-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 font-semibold bg-purple-50/20"
+                placeholder="Enter custom title"
+                value={elementKeyLeaderTitle}
+                onChange={(e) => {
+                  setElementKeyLeaderTitle(e.target.value);
+                  setCustomKeyLeaderTitle(e.target.value);
+                }}
+                className="w-44 px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-semibold"
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

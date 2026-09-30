@@ -229,7 +229,8 @@ export function drawOrgChartSlide(
   if (organized.oic) {
     const oic = organized.oic;
     const colors = getRoleColors(oic.role);
-    const label = `${oic.rank} ${oic.name}`;
+    const oicTitle = oic.elementKeyLeaderTitle || oic.keyLeaderTitle;
+    const label = oicTitle ? `${oic.rank} ${oic.name} (${oicTitle})` : `${oic.rank} ${oic.name}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -260,7 +261,8 @@ export function drawOrgChartSlide(
   if (organized.elementLeader) {
     const leader = organized.elementLeader;
     const colors = getRoleColors(leader.role);
-    const label = `${leader.rank} ${leader.name}`;
+    const elTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
+    const label = elTitle ? `${leader.rank} ${leader.name} (${elTitle})` : `${leader.rank} ${leader.name}`;
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -293,7 +295,8 @@ export function drawOrgChartSlide(
 
     const drawColumn = (col: any, xCol: number, wCol: number) => {
       const headerColors = getRoleColors(col.header.role);
-      const headerLabel = `${col.header.rank} ${col.header.name}`;
+      const colTitle = col.header.elementKeyLeaderTitle || col.header.keyLeaderTitle;
+      const headerLabel = colTitle ? `${col.header.rank} ${col.header.name} (${colTitle})` : `${col.header.rank} ${col.header.name}`;
 
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xCol,
@@ -327,7 +330,8 @@ export function drawOrgChartSlide(
           const xLane = xCol + lIndex * (laneSpace + scaledLaneGap);
           const leader = lane.laneLeader;
           const leaderColors = getRoleColors(leader.role);
-          const leaderLabel = `${leader.rank} ${leader.name}`;
+          const laneTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
+          const leaderLabel = laneTitle ? `${leader.rank} ${leader.name} (${laneTitle})` : `${leader.rank} ${leader.name}`;
 
           const xLeader = xLane + (laneSpace - wCard) / 2;
           const yLeader = yVerticalStackStart;
@@ -373,7 +377,8 @@ export function drawOrgChartSlide(
               const xSub = xSubsStart + sIndex * (wCard + cardSubGap);
               const ySub = yVerticalStackStart + cardHeight + cardRowGap;
               const subColors = getRoleColors(sub.role);
-              const subLabel = `${sub.rank} ${sub.name}`;
+              const sTitle = sub.elementKeyLeaderTitle || sub.keyLeaderTitle;
+              const subLabel = sTitle ? `${sub.rank} ${sub.name} (${sTitle})` : `${sub.rank} ${sub.name}`;
 
               slide.addShape(pptx.ShapeType.roundRect, {
                 x: xSub,
@@ -428,7 +433,10 @@ export function drawOrgChartSlide(
       const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
       const leaderColors = getRoleColors(group.leader.role);
-      const customTitle = group.leader.role === RatingRole.KEY_LEADER && group.leader.keyLeaderTitle ? ` (${group.leader.keyLeaderTitle.toUpperCase()})` : "";
+      const groupTitle = group.leader.elementKeyLeaderTitle || group.leader.keyLeaderTitle;
+      const customTitle = groupTitle 
+        ? ` (${groupTitle.toUpperCase()})` 
+        : (group.leader.role === RatingRole.KEY_LEADER ? " (KEY LEADER)" : "");
       const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}`;
 
       slide.addShape(pptx.ShapeType.roundRect, {

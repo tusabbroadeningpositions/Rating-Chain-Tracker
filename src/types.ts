@@ -52,6 +52,7 @@ export interface ArmyRatingRecord {
   corNewRaterId?: string; // New Rater ID for Change of Rater (links to another ArmyRatingRecord)
   corEffectiveDate?: string; // Effective Date for Change of Rater (YYYY-MM-DD)
   role: RatingRole | string; // Principal Duty Title / Role in the organization layout
+  elementKeyLeaderTitle?: string; // Element Key Leader Title (e.g. Music Director, Lead Producer, or custom)
   keyLeaderTitle?: string; // Custom title for key leader positions
   version?: "current" | "future" | "alternate" | string; // Version profile draft
   ncoerStatus?: string; // NCOER Status
