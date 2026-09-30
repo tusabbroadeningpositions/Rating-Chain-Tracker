@@ -193,7 +193,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setDutyMosc(editingRecord.dutyMosc);
       setElement(editingRecord.element);
       setRole(editingRecord.role);
-      const eklt = editingRecord.elementKeyLeaderTitle || editingRecord.keyLeaderTitle || "";
+      const eklt = editingRecord.elementKeyLeaderTitle || "";
       setElementKeyLeaderTitle(eklt);
       if (eklt && eklt !== "Music Director" && eklt !== "Lead Producer") {
         setIsCustomKeyLeader(true);
@@ -202,7 +202,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
         setIsCustomKeyLeader(false);
         setCustomKeyLeaderTitle("");
       }
-      setKeyLeaderTitle(eklt);
+      setKeyLeaderTitle(editingRecord.keyLeaderTitle || "");
       setFromDate(editingRecord.from);
       setThruDate(editingRecord.thru);
       // Auto-populate dueHqda if it's blank but thru is present
@@ -402,7 +402,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       corEffectiveDate: submissionType === "COR" ? corEffectiveDate : "",
       role,
       elementKeyLeaderTitle: elementKeyLeaderTitle.trim(),
-      keyLeaderTitle: elementKeyLeaderTitle.trim(),
+      keyLeaderTitle: keyLeaderTitle.trim(),
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
       lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateRaterId : undefined,
@@ -756,7 +756,25 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
           </div>
         </div>
 
-        {/* Element Key Leader Title */}
+        {/* Key Leader Custom Title (When Key Leader is selected as Principal Duty Title) */}
+        {(role === RatingRole.KEY_LEADER || role === "Key Leader") && (
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
+              <span>Key Leader Custom Title</span>
+              <span className="text-[9px] text-purple-600 font-medium lowercase">(Role title • Displays on bubble & roster)</span>
+            </label>
+            <input
+              id="input-key-leader-title"
+              type="text"
+              placeholder="e.g. Operations Coordinator, OIC Assistant, Lead Planner..."
+              value={keyLeaderTitle}
+              onChange={(e) => setKeyLeaderTitle(e.target.value)}
+              className="w-full px-3 py-1.5 border border-purple-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-purple-500 text-slate-800 bg-purple-50/30 font-semibold"
+            />
+          </div>
+        )}
+
+        {/* Element Key Leader Title (Available for all soldiers) */}
         <div className="space-y-1">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block flex items-center justify-between">
             <span>Element Key Leader Title</span>
@@ -793,7 +811,7 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
             </select>
             {(isCustomKeyLeader || (elementKeyLeaderTitle !== "" && elementKeyLeaderTitle !== "Music Director" && elementKeyLeaderTitle !== "Lead Producer")) && (
               <input
-                id="input-custom-key-leader-title"
+                id="input-custom-element-key-leader-title"
                 type="text"
                 placeholder="Enter custom title"
                 value={elementKeyLeaderTitle}

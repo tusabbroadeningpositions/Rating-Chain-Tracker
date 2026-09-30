@@ -3098,9 +3098,21 @@ export default function RatingTable({
                       </td>
                       {/* Principal Duty Title */}
                       <td className={`px-3 py-2 border-r border-slate-200 ${isRoleDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>
-                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
-                          {r.role === RatingRole.KEY_LEADER && r.keyLeaderTitle ? `${r.role} (${r.keyLeaderTitle})` : r.role}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
+                            {r.role}
+                          </span>
+                          {r.keyLeaderTitle && r.role === RatingRole.KEY_LEADER && (
+                            <div className="text-[10px] font-semibold text-purple-800 dark:text-purple-300 pl-1 leading-tight">
+                              {r.keyLeaderTitle}
+                            </div>
+                          )}
+                          {r.elementKeyLeaderTitle && (
+                            <div className="text-[10px] font-bold text-green-600 uppercase tracking-wider pl-1 leading-tight">
+                              {r.elementKeyLeaderTitle}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       {/* Dates */}
                       <td className={`px-3 py-2 border-r border-slate-200 ${isDatesDiff ? "ring-2 ring-yellow-400 ring-inset relative" : ""}`}>

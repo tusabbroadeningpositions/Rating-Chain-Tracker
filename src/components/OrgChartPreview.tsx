@@ -38,6 +38,37 @@ const getVerticalNameClass = (rank: string, name: string) => {
   }
 };
 
+const renderNodeTitles = (node: ArmyRatingRecord, isVertical: boolean = false) => {
+  const titles: string[] = [];
+  if (node.role === RatingRole.KEY_LEADER && node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
+    titles.push(node.keyLeaderTitle.trim());
+  }
+  if (node.elementKeyLeaderTitle && node.elementKeyLeaderTitle.trim()) {
+    if (!titles.includes(node.elementKeyLeaderTitle.trim())) {
+      titles.push(node.elementKeyLeaderTitle.trim());
+    }
+  }
+  if (titles.length === 0 && node.role === RatingRole.KEY_LEADER) {
+    titles.push("Key Leader");
+  }
+
+  if (titles.length === 0) return null;
+
+  if (isVertical) {
+    return titles.map((t, idx) => (
+      <div key={idx} className="text-[7.5px] font-semibold opacity-90 mt-0.5 uppercase tracking-tight">
+        {t}
+      </div>
+    ));
+  }
+
+  return titles.map((t, idx) => (
+    <div key={idx} className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
+      {t}
+    </div>
+  ));
+};
+
 export default function OrgChartPreview({ 
   records, 
   onEditClick, 
@@ -836,11 +867,7 @@ export default function OrgChartPreview({
                         style={{ width: `${totalWidthNeeded}px` }}
                       >
                         <div className="text-xs font-bold uppercase tracking-widest">{oic.rank} {oic.name}</div>
-                        {oicTitle && (
-                          <div className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
-                            {oicTitle}
-                          </div>
-                        )}
+                        {renderNodeTitles(oic)}
                       </div>
                     </div>
                   );
@@ -854,7 +881,6 @@ export default function OrgChartPreview({
                   const roleColors = getRoleColors(leader.role);
                   const activeRelation = getNodeChainRelation(leader.id);
                   const isHighlighted = activeRelation !== null;
-                  const elTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
 
                   return (
                     <div className="flex justify-center w-full">
@@ -869,11 +895,7 @@ export default function OrgChartPreview({
                         style={{ width: `${totalWidthNeeded}px` }}
                       >
                         <div className="text-xs font-bold uppercase tracking-widest">{leader.rank} {leader.name}</div>
-                        {elTitle && (
-                          <div className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
-                            {elTitle}
-                          </div>
-                        )}
+                        {renderNodeTitles(leader)}
                       </div>
                     </div>
                   );
@@ -902,7 +924,6 @@ export default function OrgChartPreview({
                               const headerColors = getRoleColors(header.role);
                               const activeRel = getNodeChainRelation(header.id);
                               const headerHighlighted = activeRel !== null;
-                              const headerTitle = header.elementKeyLeaderTitle || header.keyLeaderTitle;
 
                               return (
                                 <div key={col.header.id} className="space-y-4">
@@ -916,11 +937,7 @@ export default function OrgChartPreview({
                                     }`}
                                   >
                                     <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
-                                    {headerTitle && (
-                                      <div className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
-                                        {headerTitle}
-                                      </div>
-                                    )}
+                                    {renderNodeTitles(header)}
                                   </div>
 
                                   {/* Subordinates vertical stack */}
@@ -931,7 +948,6 @@ export default function OrgChartPreview({
                                         const lColors = getRoleColors(l.role);
                                         const lRel = getNodeChainRelation(l.id);
                                         const lHighlighted = lRel !== null;
-                                        const lTitle = l.elementKeyLeaderTitle || l.keyLeaderTitle;
 
                                         return (
                                           <div key={l.id} className="flex flex-col items-center gap-2 flex-shrink-0">
@@ -946,11 +962,7 @@ export default function OrgChartPreview({
                                             >
                                               <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                 <div className={getVerticalNameClass(l.rank, l.name)}>{l.rank} {l.name}</div>
-                                                {lTitle && (
-                                                  <div className="text-[7.5px] font-semibold opacity-90 mt-1 uppercase tracking-tight">
-                                                    {lTitle}
-                                                  </div>
-                                                )}
+                                                {renderNodeTitles(l, true)}
                                               </div>
                                             </div>
                                             {lane.subordinates.length > 0 && (
@@ -959,7 +971,6 @@ export default function OrgChartPreview({
                                                   const sColors = getRoleColors(sub.role);
                                                   const sRel = getNodeChainRelation(sub.id);
                                                   const sHighlighted = sRel !== null;
-                                                  const sTitle = sub.elementKeyLeaderTitle || sub.keyLeaderTitle;
                                                   return (
                                                     <div
                                                       key={sub.id}
@@ -973,11 +984,7 @@ export default function OrgChartPreview({
                                                     >
                                                       <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                         <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
-                                                        {sTitle && (
-                                                          <div className="text-[7.5px] font-semibold opacity-90 mt-1 uppercase tracking-tight">
-                                                            {sTitle}
-                                                          </div>
-                                                        )}
+                                                        {renderNodeTitles(sub, true)}
                                                       </div>
                                                     </div>
                                                   );
@@ -1004,7 +1011,6 @@ export default function OrgChartPreview({
                         const isHighlighted = activeRelation !== null;
                         const groupWidth = groupWidths[gIndex];
                         const flexPercent = (groupWidth / Math.max(1, totalBlocksWidth)) * 100;
-                        const leaderKeyLeaderTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
 
                         return (
                           <div 
@@ -1022,15 +1028,7 @@ export default function OrgChartPreview({
                               }`}
                             >
                               <div className="text-xs font-bold uppercase tracking-wider">{leader.rank} {leader.name}</div>
-                              {leaderKeyLeaderTitle ? (
-                                <div className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
-                                  {leaderKeyLeaderTitle}
-                                </div>
-                              ) : leader.role === RatingRole.KEY_LEADER ? (
-                                <div className="text-[9px] font-black text-purple-900 uppercase tracking-widest mt-0.5 px-1.5 py-0.5 bg-purple-100/50 rounded inline-block">
-                                  Key Leader
-                                </div>
-                              ) : null}
+                              {renderNodeTitles(leader)}
                             </div>
 
                             {groupBlock.columns.length > 0 && (
@@ -1040,7 +1038,6 @@ export default function OrgChartPreview({
                                   const headerColors = getRoleColors(header.role);
                                   const activeRel = getNodeChainRelation(header.id);
                                   const headerHighlighted = activeRel !== null;
-                                  const headerKeyLeaderTitle = header.elementKeyLeaderTitle || header.keyLeaderTitle;
 
                                   return (
                                     <div key={col.header.id} className="space-y-4">
@@ -1054,11 +1051,7 @@ export default function OrgChartPreview({
                                         }`}
                                       >
                                         <div className="text-xs font-bold uppercase tracking-wider">{header.rank} {header.name}</div>
-                                        {headerKeyLeaderTitle && (
-                                          <div className="text-[10px] font-semibold tracking-normal mt-0.5 opacity-90">
-                                            {headerKeyLeaderTitle}
-                                          </div>
-                                        )}
+                                        {renderNodeTitles(header)}
                                       </div>
 
                                       {col.lanes.length > 0 && (
@@ -1068,7 +1061,6 @@ export default function OrgChartPreview({
                                             const laneLeaderColors = getRoleColors(laneLeader.role);
                                             const laneLeaderRel = getNodeChainRelation(laneLeader.id);
                                             const laneLeaderHighlighted = laneLeaderRel !== null;
-                                            const laneLeaderTitle = laneLeader.elementKeyLeaderTitle || laneLeader.keyLeaderTitle;
 
                                             return (
                                               <div key={laneLeader.id} className="flex flex-col items-center gap-2 flex-shrink-0">
@@ -1083,11 +1075,7 @@ export default function OrgChartPreview({
                                                 >
                                                   <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                     <div className={getVerticalNameClass(laneLeader.rank, laneLeader.name)}>{laneLeader.rank} {laneLeader.name}</div>
-                                                    {laneLeaderTitle && (
-                                                      <div className="text-[7.5px] font-semibold opacity-90 mt-1 uppercase tracking-tight">
-                                                        {laneLeaderTitle}
-                                                      </div>
-                                                    )}
+                                                    {renderNodeTitles(laneLeader, true)}
                                                   </div>
                                                 </div>
                                                 {lane.subordinates.length > 0 && (
@@ -1096,7 +1084,6 @@ export default function OrgChartPreview({
                                                       const subColors = getRoleColors(sub.role);
                                                       const subRel = getNodeChainRelation(sub.id);
                                                       const subHighlighted = subRel !== null;
-                                                      const subTitle = sub.elementKeyLeaderTitle || sub.keyLeaderTitle;
 
                                                       return (
                                                         <div
@@ -1111,11 +1098,7 @@ export default function OrgChartPreview({
                                                         >
                                                           <div className="flex flex-col items-center justify-center text-center select-none" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>
                                                             <div className={getVerticalNameClass(sub.rank, sub.name)}>{sub.rank} {sub.name}</div>
-                                                            {subTitle && (
-                                                              <div className="text-[7.5px] font-semibold opacity-90 mt-1 uppercase tracking-tight">
-                                                                {subTitle}
-                                                              </div>
-                                                            )}
+                                                            {renderNodeTitles(sub, true)}
                                                           </div>
                                                         </div>
                                                       );
@@ -1266,11 +1249,19 @@ export default function OrgChartPreview({
                         <span className={isRoleDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1 text-yellow-300 font-bold" : ""}>
                           {selectedNode.role}
                         </span>
-                        {(selectedNode.elementKeyLeaderTitle || selectedNode.keyLeaderTitle) && (
+                        {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle && (
                           <>
                             <span>•</span>
                             <span className="text-purple-300 font-semibold">
-                              {selectedNode.elementKeyLeaderTitle || selectedNode.keyLeaderTitle}
+                              {selectedNode.keyLeaderTitle}
+                            </span>
+                          </>
+                        )}
+                        {selectedNode.elementKeyLeaderTitle && (
+                          <>
+                            <span>•</span>
+                            <span className="text-emerald-400 font-semibold">
+                              {selectedNode.elementKeyLeaderTitle}
                             </span>
                           </>
                         )}
@@ -1290,10 +1281,16 @@ export default function OrgChartPreview({
                         <span className="text-slate-400">Principal Duty:</span>
                         <span className="font-semibold text-slate-200">{selectedNode.role}</span>
                       </div>
-                      {(selectedNode.elementKeyLeaderTitle || selectedNode.keyLeaderTitle) && (
+                      {selectedNode.role === RatingRole.KEY_LEADER && selectedNode.keyLeaderTitle && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Key Leader Title:</span>
+                          <span className="font-semibold text-purple-300">{selectedNode.keyLeaderTitle}</span>
+                        </div>
+                      )}
+                      {selectedNode.elementKeyLeaderTitle && (
                         <div className="flex justify-between items-center">
                           <span className="text-slate-400">Element Key Leader:</span>
-                          <span className="font-semibold text-purple-300">{selectedNode.elementKeyLeaderTitle || selectedNode.keyLeaderTitle}</span>
+                          <span className="font-semibold text-emerald-400">{selectedNode.elementKeyLeaderTitle}</span>
                         </div>
                       )}
                       <div className={`flex justify-between items-center transition-all ${isDatesDiff ? "ring-1 ring-yellow-400 bg-yellow-400/10 rounded px-1.5 py-0.5" : ""}`}>

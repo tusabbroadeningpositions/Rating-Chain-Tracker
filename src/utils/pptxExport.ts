@@ -7,6 +7,26 @@ import pptxgen from "pptxgenjs";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "./orgChartLayout";
 
+function getNodePptxLabel(node: ArmyRatingRecord): string {
+  const titles: string[] = [];
+  if (node.role === RatingRole.KEY_LEADER && node.keyLeaderTitle && node.keyLeaderTitle.trim()) {
+    titles.push(node.keyLeaderTitle.trim());
+  }
+  if (node.elementKeyLeaderTitle && node.elementKeyLeaderTitle.trim()) {
+    if (!titles.includes(node.elementKeyLeaderTitle.trim())) {
+      titles.push(node.elementKeyLeaderTitle.trim());
+    }
+  }
+  if (titles.length === 0 && node.role === RatingRole.KEY_LEADER) {
+    titles.push("KEY LEADER");
+  }
+
+  if (titles.length > 0) {
+    return `${node.rank} ${node.name}\n${titles.join("\n")}`;
+  }
+  return `${node.rank} ${node.name}`;
+}
+
 // Helper to format date from YYYY-MM-DD to YYYYMMDD
 function formatArmyDate(dateStr: string): string {
   if (!dateStr) return "";
@@ -229,8 +249,7 @@ export function drawOrgChartSlide(
   if (organized.oic) {
     const oic = organized.oic;
     const colors = getRoleColors(oic.role);
-    const oicTitle = oic.elementKeyLeaderTitle || oic.keyLeaderTitle;
-    const label = oicTitle ? `${oic.rank} ${oic.name}\n${oicTitle}` : `${oic.rank} ${oic.name}`;
+    const label = getNodePptxLabel(oic);
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -261,8 +280,7 @@ export function drawOrgChartSlide(
   if (organized.elementLeader) {
     const leader = organized.elementLeader;
     const colors = getRoleColors(leader.role);
-    const elTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
-    const label = elTitle ? `${leader.rank} ${leader.name}\n${elTitle}` : `${leader.rank} ${leader.name}`;
+    const label = getNodePptxLabel(leader);
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: startX,
@@ -295,8 +313,7 @@ export function drawOrgChartSlide(
 
     const drawColumn = (col: any, xCol: number, wCol: number) => {
       const headerColors = getRoleColors(col.header.role);
-      const colTitle = col.header.elementKeyLeaderTitle || col.header.keyLeaderTitle;
-      const headerLabel = colTitle ? `${col.header.rank} ${col.header.name}\n${colTitle}` : `${col.header.rank} ${col.header.name}`;
+      const headerLabel = getNodePptxLabel(col.header);
 
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xCol,
@@ -330,8 +347,7 @@ export function drawOrgChartSlide(
           const xLane = xCol + lIndex * (laneSpace + scaledLaneGap);
           const leader = lane.laneLeader;
           const leaderColors = getRoleColors(leader.role);
-          const laneTitle = leader.elementKeyLeaderTitle || leader.keyLeaderTitle;
-          const leaderLabel = laneTitle ? `${leader.rank} ${leader.name}\n${laneTitle}` : `${leader.rank} ${leader.name}`;
+          const leaderLabel = getNodePptxLabel(leader);
 
           const xLeader = xLane + (laneSpace - wCard) / 2;
           const yLeader = yVerticalStackStart;
@@ -377,8 +393,7 @@ export function drawOrgChartSlide(
               const xSub = xSubsStart + sIndex * (wCard + cardSubGap);
               const ySub = yVerticalStackStart + cardHeight + cardRowGap;
               const subColors = getRoleColors(sub.role);
-              const sTitle = sub.elementKeyLeaderTitle || sub.keyLeaderTitle;
-              const subLabel = sTitle ? `${sub.rank} ${sub.name}\n${sTitle}` : `${sub.rank} ${sub.name}`;
+              const subLabel = getNodePptxLabel(sub);
 
               slide.addShape(pptx.ShapeType.roundRect, {
                 x: xSub,
@@ -433,11 +448,7 @@ export function drawOrgChartSlide(
       const wGroup = getGroupAllocatedWidth(group);
       const xGroup = currentX;
       const leaderColors = getRoleColors(group.leader.role);
-      const groupTitle = group.leader.elementKeyLeaderTitle || group.leader.keyLeaderTitle;
-      const customTitle = groupTitle 
-        ? `\n${groupTitle.toUpperCase()}` 
-        : (group.leader.role === RatingRole.KEY_LEADER ? "\nKEY LEADER" : "");
-      const leaderLabel = `${group.leader.rank} ${group.leader.name}${customTitle}`;
+      const leaderLabel = getNodePptxLabel(group.leader);
 
       slide.addShape(pptx.ShapeType.roundRect, {
         x: xGroup,
