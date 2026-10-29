@@ -153,9 +153,12 @@ export function formatNameToLastFirstRank(nameStr: string, rankStr: string = "")
     }
   }
 
-  // 4. Combine with rank in parentheses: Last, First (RANK)
+  // 4. Combine with rank without parentheses: e.g. "MAJ Morris, Patrick"
   if (extractedRank) {
-    return `${formattedName} (${extractedRank})`;
+    if (formattedName.startsWith(extractedRank + " ")) {
+      return formattedName;
+    }
+    return `${extractedRank} ${formattedName}`;
   }
   return formattedName;
 }

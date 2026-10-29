@@ -485,7 +485,7 @@ export default function RatingTable({
     const r = searchSource.find(rec => rec.id === raterId);
     if (r) {
       if (r.rank) {
-        return `${r.name} (${r.rank})`;
+        return r.name.startsWith(r.rank + " ") ? r.name : `${r.rank} ${r.name}`;
       }
       return r.name;
     }
