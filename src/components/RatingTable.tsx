@@ -11,10 +11,11 @@ import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank, isLooksLikeId,
 import { parseCSV, generateTemplateCSV, formatDateToMDYYYY, formatDateToYYYYMMDD } from "../utils/csvHandler";
 import { add90Days } from "../utils/dateUtils";
 import { getRoleColors } from "../utils/orgChartLayout";
-import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History as HistoryIcon, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles } from "lucide-react";
+import { Search, FileDown, Upload, Trash2, Edit2, Plus, RefreshCw, HelpCircle, FileSpreadsheet, X, CalendarPlus, Layers, AlertTriangle, ChevronRight, ChevronDown, History as HistoryIcon, Info, AlertCircle, RotateCcw, CheckCircle2, FileText, Sparkles, ShieldAlert } from "lucide-react";
 import { subscribeToRecordHistory, restoreRecordHistory, deleteHistoryRecord, subscribeToNotes, addNote, deleteNote } from "../lib/firebaseService";
 import ConfirmDialog from "./ConfirmDialog";
 import { exportNcoerReportToPPTX } from "../utils/pptxExport";
+import DiscrepancyEtpModal from "./DiscrepancyEtpModal";
 
 interface RatingTableProps {
   records: ArmyRatingRecord[];
@@ -131,6 +132,7 @@ export default function RatingTable({
     onConfirm: () => void;
     variant: "danger" | "warning" | "info" | "question";
   } | null>(null);
+  const [etpModalRecord, setEtpModalRecord] = useState<ArmyRatingRecord | null>(null);
 
   // Internal component for the Report Preview Modal to handle local state (filtering)
   const ReportPreviewModal = () => {
@@ -3000,8 +3002,14 @@ export default function RatingTable({
                         }`}
                       >
                       {/* Name */}
-                      <td className={`sticky left-0 z-10 group-hover:z-20 px-3 py-2 font-semibold text-slate-900 border-r border-slate-200 relative ${
-                        isSeniorNcoNotRating(r) ? "ring-2 ring-rose-500 ring-inset" : ""
+                      <td 
+                        onClick={() => {
+                          if (isSeniorNcoNotRating(r)) {
+                            setEtpModalRecord(r);
+                          }
+                        }}
+                        className={`sticky left-0 z-10 group-hover:z-20 px-3 py-2 font-semibold text-slate-900 border-r border-slate-200 relative ${
+                        isSeniorNcoNotRating(r) ? "ring-2 ring-rose-500 ring-inset cursor-pointer hover:bg-rose-50/60" : ""
                       } ${
                         showGreenLine 
                           ? "after:absolute after:top-0 after:right-0 after:bottom-0 after:w-[3px] after:bg-emerald-500 after:z-[11]" 
@@ -3040,17 +3048,45 @@ export default function RatingTable({
                               })()}
                             </div>
                             {isSeniorNcoNotRating(r) && (
-                              <div className="relative group/tooltip flex-shrink-0">
-                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 animate-pulse cursor-help" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEtpModalRecord(r);
+                                }}
+                                className="relative group/tooltip flex-shrink-0 cursor-pointer"
+                                title="Discrepancy: Senior NCO Not Rating - Click to add/edit ETP"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
                                 <div className="invisible group-hover/tooltip:visible absolute left-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal font-normal text-left">
                                   <p className="font-bold text-rose-400 mb-1">Senior NCO Not Rating Anyone</p>
                                   <p>
-                                    As a {r.rank}, this Senior NCO is expected to be assigned as a rater in this rating scheme. Currently, they are not rating any Soldier.
+                                    As a {r.rank}, this Senior NCO is expected to be assigned as a rater in this rating scheme. Currently, they are not rating any Soldier. Click to add an Exception to Policy (ETP).
                                   </p>
                                 </div>
-                              </div>
+                              </button>
                             )}
                           </div>
+                          {isSeniorNcoNotRating(r) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEtpModalRecord(r);
+                              }}
+                              className={`mt-1 flex items-center justify-between gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold border transition-colors w-fit cursor-pointer ${
+                                r.etpStatus?.toLowerCase() === "approved"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                  : r.etpStatus?.toLowerCase() === "pending"
+                                    ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                                    : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                              }`}
+                              title="Click to view discrepancy or add Exception to Policy (ETP) info"
+                            >
+                              <ShieldAlert className="w-2.5 h-2.5 shrink-0" />
+                              <span>{r.etpStatus ? `ETP: ${r.etpStatus.toUpperCase()}` : "Not Rating: Add ETP"}</span>
+                            </button>
+                          )}
                           {(selectedVersion === "current" || selectedVersion === "future") && (
                             <button 
                               onClick={(e) => { e.stopPropagation(); toggleHistory(r.id); }}
@@ -3139,9 +3175,15 @@ export default function RatingTable({
                         </div>
                       </td>
                       {/* Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
+                      <td 
+                        onClick={() => {
+                          if (getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)) {
+                            setEtpModalRecord(r);
+                          }
+                        }}
+                        className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)
-                          ? "ring-2 ring-rose-500 ring-inset relative bg-rose-50/50"
+                          ? "ring-2 ring-rose-500 ring-inset relative bg-rose-50/50 cursor-pointer hover:bg-rose-100/50"
                           : isRaterDiff 
                             ? "ring-2 ring-yellow-400 ring-inset relative" 
                             : ""
@@ -3158,27 +3200,59 @@ export default function RatingTable({
                             )}
                           </div>
                           {(getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)) && (
-                            <div className="relative group/tooltip flex-shrink-0">
-                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse cursor-help" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEtpModalRecord(r);
+                              }}
+                              className="relative group/tooltip flex-shrink-0 cursor-pointer"
+                              title="Rater Rank Discrepancy - Click to add/edit ETP"
+                            >
+                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
                               <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
                                 <p className="font-bold text-rose-400 mb-1">Rater Rank Discrepancy</p>
                                 <p className="text-[10px] leading-relaxed">
                                   {getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)}
                                 </p>
+                                <p className="text-[9px] text-amber-300 mt-1 font-bold">Click to log Exception to Policy (ETP)</p>
                               </div>
-                            </div>
+                            </button>
                           )}
                         </div>
                         {(getTwoRanksAboveRaterWarning(r) || getSameRankRaterWarning(r)) && (
-                          <div className="text-[9px] text-rose-600 font-semibold leading-tight mt-1 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 max-w-[140px]">
-                            {getTwoRanksAboveRaterWarning(r) ? "Rank gap too wide" : "Same Rank Rating"}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEtpModalRecord(r);
+                            }}
+                            className={`text-[9px] font-bold leading-tight mt-1 border rounded px-1.5 py-0.5 max-w-[145px] flex items-center justify-between gap-1 cursor-pointer transition-colors ${
+                              r.etpStatus?.toLowerCase() === "approved"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                : r.etpStatus?.toLowerCase() === "pending"
+                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                                  : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                            }`}
+                            title="Click to view discrepancy or add Exception to Policy (ETP) info"
+                          >
+                            <span className="truncate">
+                              {r.etpStatus ? `ETP: ${r.etpStatus.toUpperCase()}` : getTwoRanksAboveRaterWarning(r) ? "Rank Gap: Add ETP" : "Same Rank: Add ETP"}
+                            </span>
+                            <ShieldAlert className="w-2.5 h-2.5 shrink-0" />
+                          </button>
                         )}
                       </td>
                       {/* Senior Rater */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
+                      <td 
+                        onClick={() => {
+                          if (mismatchInfo) {
+                            setEtpModalRecord(r);
+                          }
+                        }}
+                        className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         mismatchInfo 
-                          ? "ring-2 ring-rose-500 ring-inset relative" 
+                          ? "ring-2 ring-rose-500 ring-inset relative cursor-pointer hover:bg-rose-100/50" 
                           : isSeniorRaterDiff 
                             ? "ring-2 ring-yellow-400 ring-inset relative" 
                             : ""
@@ -3195,8 +3269,16 @@ export default function RatingTable({
                             )}
                           </div>
                           {mismatchInfo && (
-                            <div className="relative group/tooltip flex-shrink-0">
-                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse cursor-help" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEtpModalRecord(r);
+                              }}
+                              className="relative group/tooltip flex-shrink-0 cursor-pointer"
+                              title="Senior Rater Mismatch - Click to add/edit ETP"
+                            >
+                              <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
                               <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left">
                                 <p className="font-bold text-rose-400 mb-1">Senior Rater Mismatch</p>
                                 <p className="mb-1 italic text-[10px]">
@@ -3205,20 +3287,44 @@ export default function RatingTable({
                                 <p>
                                   Expected Senior Rater: <strong className="text-emerald-400">{mismatchInfo.expectedName}</strong>
                                 </p>
+                                <p className="text-[9px] text-amber-300 mt-1 font-bold">Click to log Exception to Policy (ETP)</p>
                               </div>
-                            </div>
+                            </button>
                           )}
                         </div>
                         {mismatchInfo && (
-                          <div className="text-[9px] text-rose-600 font-semibold leading-tight mt-1 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 max-w-[140px]">
-                            Expected: {mismatchInfo.expectedName}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEtpModalRecord(r);
+                            }}
+                            className={`text-[9px] font-bold leading-tight mt-1 border rounded px-1.5 py-0.5 max-w-[145px] flex items-center justify-between gap-1 cursor-pointer transition-colors ${
+                              r.etpStatus?.toLowerCase() === "approved"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                : r.etpStatus?.toLowerCase() === "pending"
+                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                                  : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                            }`}
+                            title="Click to view discrepancy or add Exception to Policy (ETP) info"
+                          >
+                            <span className="truncate">
+                              {r.etpStatus ? `ETP: ${r.etpStatus.toUpperCase()}` : "Mismatch: Add ETP"}
+                            </span>
+                            <ShieldAlert className="w-2.5 h-2.5 shrink-0" />
+                          </button>
                         )}
                       </td>
                       {/* Reviewer */}
-                      <td className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
+                      <td 
+                        onClick={() => {
+                          if (reviewerMismatchInfo) {
+                            setEtpModalRecord(r);
+                          }
+                        }}
+                        className={`px-3 py-2 text-slate-700 border-r border-slate-200 ${
                         reviewerMismatchInfo 
-                          ? "ring-2 ring-purple-500 ring-inset relative" 
+                          ? "ring-2 ring-rose-500 ring-inset relative cursor-pointer hover:bg-rose-100/50" 
                           : isReviewerDiff 
                             ? "ring-2 ring-yellow-400 ring-inset relative" 
                             : ""
@@ -3233,24 +3339,50 @@ export default function RatingTable({
                             )}
                           </div>
                           {reviewerMismatchInfo && (
-                            <div className="relative group/tooltip flex-shrink-0">
-                              <HelpCircle className="w-4 h-4 text-purple-500 animate-pulse cursor-help" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEtpModalRecord(r);
+                              }}
+                              className="relative group/tooltip flex-shrink-0 cursor-pointer"
+                              title="SGM Reviewer Required - Click to add/edit ETP"
+                            >
+                              <HelpCircle className="w-4 h-4 text-rose-500 animate-pulse" />
                               <div className="invisible group-hover/tooltip:visible absolute right-0 z-50 w-64 p-2.5 mt-1 text-xs text-white bg-slate-900 rounded-md shadow-xl border border-slate-700 leading-normal text-left text-[11px]">
-                                <p className="font-bold text-purple-400 mb-1">SGM Reviewer Required</p>
+                                <p className="font-bold text-rose-400 mb-1">SGM Reviewer Required</p>
                                 <p className="mb-1 italic">
                                   Senior Rater <strong className="text-amber-300">{reviewerMismatchInfo.seniorRaterName}</strong> is rank MSG.
                                 </p>
                                 <p>
                                   Expected Reviewer: <strong className="text-emerald-400">{reviewerMismatchInfo.expectedName}</strong>
                                 </p>
+                                <p className="text-[9px] text-amber-300 mt-1 font-bold">Click to log Exception to Policy (ETP)</p>
                               </div>
-                            </div>
+                            </button>
                           )}
                         </div>
                         {reviewerMismatchInfo && (
-                          <div className="text-[9px] text-purple-600 font-semibold leading-tight mt-1 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5 max-w-[140px]">
-                            Expected: {reviewerMismatchInfo.expectedName}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEtpModalRecord(r);
+                            }}
+                            className={`text-[9px] font-bold leading-tight mt-1 border rounded px-1.5 py-0.5 max-w-[145px] flex items-center justify-between gap-1 cursor-pointer transition-colors ${
+                              r.etpStatus?.toLowerCase() === "approved"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                : r.etpStatus?.toLowerCase() === "pending"
+                                  ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                                  : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                            }`}
+                            title="Click to view discrepancy or add Exception to Policy (ETP) info"
+                          >
+                            <span className="truncate">
+                              {r.etpStatus ? `ETP: ${r.etpStatus.toUpperCase()}` : "Reviewer: Add ETP"}
+                            </span>
+                            <ShieldAlert className="w-2.5 h-2.5 shrink-0" />
+                          </button>
                         )}
                       </td>
                       {/* Submission Type */}
@@ -3391,6 +3523,21 @@ export default function RatingTable({
                             >
                               <CalendarPlus className="w-3.5 h-3.5" />
                             </button>
+                            {(hasDiscrepancy(r) || r.etpReason || r.etpStatus) && (
+                              <button
+                                onClick={() => setEtpModalRecord(r)}
+                                className={`p-1 rounded transition-colors ${
+                                  r.etpStatus?.toLowerCase() === "approved"
+                                    ? "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                    : r.etpStatus?.toLowerCase() === "pending"
+                                      ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                      : "text-rose-500 hover:text-rose-600 hover:bg-rose-50 animate-pulse"
+                                }`}
+                                title="Exception to Policy (ETP) / Discrepancy Info"
+                              >
+                                <ShieldAlert className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => onEdit(r)}
                               className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -5041,6 +5188,20 @@ export default function RatingTable({
           }}
           onCancel={() => setHistoryConfirm(null)}
           variant={historyConfirm.variant}
+        />
+      )}
+
+      {etpModalRecord && (
+        <DiscrepancyEtpModal
+          record={etpModalRecord}
+          allRecords={allRecords || records}
+          isOpen={!!etpModalRecord}
+          onClose={() => setEtpModalRecord(null)}
+          onSave={(updatedRecord) => {
+            onUpdateRecord(updatedRecord);
+            setEtpModalRecord(null);
+          }}
+          readOnly={readOnly}
         />
       )}
     </div>

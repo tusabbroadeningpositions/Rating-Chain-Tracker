@@ -141,6 +141,22 @@
           "type": "string",
           "description": "Custom title for key leader positions."
         },
+        "etpReason": {
+          "type": "string",
+          "description": "Reason for discrepancy and reason for exception to policy."
+        },
+        "etpStatus": {
+          "type": "string",
+          "description": "Exception to policy status (e.g. pending, approved)."
+        },
+        "etpApprovedDate": {
+          "type": "string",
+          "description": "Date of approved exception to policy (YYYY-MM-DD)."
+        },
+        "etpNotes": {
+          "type": "string",
+          "description": "Notes for the exception to policy."
+        },
         "version": {
           "type": "string",
           "description": "Version profile draft (e.g., current, future, alternate)."
@@ -273,6 +289,10 @@
             "role": { "type": "string" },
             "elementKeyLeaderTitle": { "type": "string" },
             "keyLeaderTitle": { "type": "string" },
+            "etpReason": { "type": "string" },
+            "etpStatus": { "type": "string" },
+            "etpApprovedDate": { "type": "string" },
+            "etpNotes": { "type": "string" },
             "ncoerStatus": { "type": "string" },
             "ncoerStatusDate": { "type": "string" },
             "isCustomStatus": { "type": "boolean" },

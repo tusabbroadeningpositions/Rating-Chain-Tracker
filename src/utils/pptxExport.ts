@@ -6,6 +6,7 @@
 import pptxgen from "pptxgenjs";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "./orgChartLayout";
+import { getAllDiscrepancies, DiscrepancyItem } from "./discrepancyUtils";
 
 function isPinkKeyLeaderNode(node: ArmyRatingRecord): boolean {
   return !!(node.isUnitKeyLeader || node.role === RatingRole.KEY_LEADER || node.role === "Key Leader" || (node.keyLeaderTitle && node.keyLeaderTitle.trim().length > 0));
@@ -561,6 +562,323 @@ export function drawOrgChartSlide(
 }
 
 /**
+ * Draws the "Discrepancies / ETPs" slide(s) on a PowerPoint presentation.
+ */
+export function drawDiscrepanciesSlide(
+  pptx: any,
+  records: ArmyRatingRecord[],
+  titleText: string = "Army Rating Scheme",
+  slideWidth: number = 18.0
+) {
+  const discrepancies = getAllDiscrepancies(records);
+  const marginX = 0.4;
+  const availableWidth = slideWidth - (marginX * 2);
+
+  // If no discrepancies, still add the second slide stating no discrepancies found
+  if (discrepancies.length === 0) {
+    const slide = pptx.addSlide();
+
+    // Dark Header Banner
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: slideWidth,
+      h: 0.9,
+      fill: { color: "1E293B" }
+    });
+
+    // Gold line under banner
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0.9,
+      w: slideWidth,
+      h: 0.06,
+      fill: { color: "F59E0B" }
+    });
+
+    // Top Header Text as requested: Discrepancies / ETPs
+    slide.addText("Discrepancies / ETPs", {
+      x: marginX,
+      y: 0.1,
+      w: availableWidth - 4.0,
+      h: 0.45,
+      fontSize: 18,
+      fontFace: "Inter",
+      color: "FFFFFF",
+      bold: true,
+      valign: "middle"
+    });
+
+    slide.addText(`PROFILE: ${titleText.toUpperCase()} — EXCEPTION TO POLICY & DISCREPANCY REGISTER`, {
+      x: marginX,
+      y: 0.55,
+      w: availableWidth - 4.0,
+      h: 0.25,
+      fontSize: 9,
+      fontFace: "Inter",
+      color: "94A3B8",
+      bold: true,
+      valign: "middle"
+    });
+
+    const todayStr = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+    slide.addText(`STATUS AS OF: ${todayStr.toUpperCase()}`, {
+      x: slideWidth - marginX - 3.5,
+      y: 0.2,
+      w: 3.5,
+      h: 0.5,
+      fontSize: 9.5,
+      fontFace: "Inter",
+      color: "FBBF24",
+      bold: true,
+      align: "right",
+      valign: "middle"
+    });
+
+    // Clean confirmation box
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: (slideWidth - 8.0) / 2,
+      y: 2.8,
+      w: 8.0,
+      h: 2.2,
+      fill: { color: "F0FDF4" }, // green-50
+      line: { color: "86EFAC", width: 1.5 } // green-300
+    });
+
+    slide.addText("NO DISCREPANCIES OR EXCEPTIONS TO POLICY (ETPs)", {
+      x: (slideWidth - 8.0) / 2,
+      y: 3.1,
+      w: 8.0,
+      h: 0.5,
+      fontSize: 14,
+      fontFace: "Inter",
+      color: "166534",
+      bold: true,
+      align: "center",
+      valign: "middle"
+    });
+
+    slide.addText("All rating chains in this rating profile comply with Army AR 623-3 regulatory standards.\nNo rank discrepancies, senior rater mismatches, or missing reviewer assignments were detected.", {
+      x: (slideWidth - 8.0) / 2,
+      y: 3.6,
+      w: 8.0,
+      h: 1.0,
+      fontSize: 10,
+      fontFace: "Inter",
+      color: "475569",
+      align: "center",
+      valign: "top"
+    });
+
+    return;
+  }
+
+  // When discrepancies exist, paginate 4 items per slide
+  const itemsPerSlide = 4;
+  for (let i = 0; i < discrepancies.length; i += itemsPerSlide) {
+    const chunk = discrepancies.slice(i, i + itemsPerSlide);
+    const isContinued = i > 0;
+    const slide = pptx.addSlide();
+
+    // Dark Header Banner
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: slideWidth,
+      h: 0.9,
+      fill: { color: "1E293B" }
+    });
+
+    // Gold line under banner
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0.9,
+      w: slideWidth,
+      h: 0.06,
+      fill: { color: "F59E0B" }
+    });
+
+    // Top Header: "Discrepancies / ETPs"
+    slide.addText(`Discrepancies / ETPs${isContinued ? " (Continued)" : ""}`, {
+      x: marginX,
+      y: 0.1,
+      w: availableWidth - 4.5,
+      h: 0.45,
+      fontSize: 18,
+      fontFace: "Inter",
+      color: "FFFFFF",
+      bold: true,
+      valign: "middle"
+    });
+
+    slide.addText(`PROFILE: ${titleText.toUpperCase()} — TOTAL ACTIVE DISCREPANCIES / ETPs: ${discrepancies.length}`, {
+      x: marginX,
+      y: 0.55,
+      w: availableWidth - 4.5,
+      h: 0.25,
+      fontSize: 9,
+      fontFace: "Inter",
+      color: "94A3B8",
+      bold: true,
+      valign: "middle"
+    });
+
+    const todayStr = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+    slide.addText(`AS OF: ${todayStr.toUpperCase()}`, {
+      x: slideWidth - marginX - 4.0,
+      y: 0.2,
+      w: 4.0,
+      h: 0.5,
+      fontSize: 9.5,
+      fontFace: "Inter",
+      color: "FBBF24",
+      bold: true,
+      align: "right",
+      valign: "middle"
+    });
+
+    // Table rows
+    const tableRows: any[] = [
+      [
+        { text: "#", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "center", fontSize: 8.5 } },
+        { text: "Affected Rating Chain", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 8.5 } },
+        { text: "Discrepancy & Reason (Rule Violation)", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 8.5 } },
+        { text: "Exception to Policy (ETP) Information", options: { bold: true, color: "FFFFFF", fill: "1E293B", align: "left", fontSize: 8.5 } }
+      ]
+    ];
+
+    chunk.forEach((disc, cIdx) => {
+      const rowNum = i + cIdx + 1;
+      const bgHex = cIdx % 2 === 1 ? "F8FAFC" : "FFFFFF";
+
+      // 1. Affected Rating Chain with the discrepant name in RED font
+      const chainChunks: any[] = [
+        { text: "Ratee: ", options: { bold: true, color: "64748B", fontSize: 8 } },
+        { 
+          text: `${disc.rateeName} (${disc.rateeRole})\n`, 
+          options: { 
+            bold: true, 
+            color: disc.discrepantRole === "ratee" ? "DC2626" : "1E293B", 
+            fontSize: 8.5 
+          } 
+        },
+        { text: "Rater: ", options: { bold: true, color: "64748B", fontSize: 8 } },
+        { 
+          text: `${disc.raterName}\n`, 
+          options: { 
+            bold: true, 
+            color: disc.discrepantRole === "rater" ? "DC2626" : "1E293B", 
+            fontSize: 8.5 
+          } 
+        },
+        { text: "Senior Rater: ", options: { bold: true, color: "64748B", fontSize: 8 } },
+        { 
+          text: `${disc.seniorRaterName}\n`, 
+          options: { 
+            bold: true, 
+            color: disc.discrepantRole === "seniorRater" ? "DC2626" : "1E293B", 
+            fontSize: 8.5 
+          } 
+        },
+        { text: "Reviewer: ", options: { bold: true, color: "64748B", fontSize: 8 } },
+        { 
+          text: `${disc.reviewerName}`, 
+          options: { 
+            bold: true, 
+            color: disc.discrepantRole === "reviewer" ? "DC2626" : "1E293B", 
+            fontSize: 8.5 
+          } 
+        }
+      ];
+
+      // 2. Discrepancy & Reason
+      const discrepancyChunks: any[] = [
+        { text: `${disc.title.toUpperCase()}\n`, options: { bold: true, color: "DC2626", fontSize: 9 } },
+        { text: `${disc.reason}\n\n`, options: { color: "334155", fontSize: 8.5 } },
+        { text: "Discrepancy Name: ", options: { bold: true, color: "64748B", fontSize: 8 } },
+        { text: `${disc.discrepantName} (${disc.discrepantRole.toUpperCase()})`, options: { bold: true, color: "DC2626", fontSize: 8.5 } }
+      ];
+
+      // 3. ETP Information
+      const etpChunks: any[] = [];
+      const statusColor = (disc.etpStatus || "").toLowerCase() === "approved" ? "059669" : "D97706";
+      const statusLabel = disc.etpStatus ? disc.etpStatus.toUpperCase() : "PENDING LOGGING";
+
+      etpChunks.push({ text: "ETP Status: ", options: { bold: true, color: "64748B", fontSize: 8 } });
+      etpChunks.push({ text: `${statusLabel}\n`, options: { bold: true, color: statusColor, fontSize: 8.5 } });
+
+      if (disc.etpApprovedDate) {
+        etpChunks.push({ text: "Date of Approved ETP: ", options: { bold: true, color: "64748B", fontSize: 8 } });
+        etpChunks.push({ text: `${disc.etpApprovedDate}\n`, options: { bold: true, color: "059669", fontSize: 8.5 } });
+      }
+
+      if (disc.etpReason) {
+        etpChunks.push({ text: "Reason for Discrepancy / ETP: ", options: { bold: true, color: "64748B", fontSize: 8 } });
+        etpChunks.push({ text: `${disc.etpReason}\n`, options: { color: "1E293B", fontSize: 8.5 } });
+      } else {
+        etpChunks.push({ text: "Reason for Discrepancy / ETP: ", options: { bold: true, color: "64748B", fontSize: 8 } });
+        etpChunks.push({ text: "No user justification entered\n", options: { italic: true, color: "94A3B8", fontSize: 8 } });
+      }
+
+      if (disc.etpNotes) {
+        etpChunks.push({ text: "Notes: ", options: { bold: true, color: "64748B", fontSize: 8 } });
+        etpChunks.push({ text: `${disc.etpNotes}`, options: { color: "334155", fontSize: 8 } });
+      }
+
+      tableRows.push([
+        { text: `${rowNum}`, options: { fill: bgHex, align: "center", valign: "top", fontSize: 8.5, bold: true, color: "64748B" } },
+        { text: chainChunks, options: { fill: bgHex, align: "left", valign: "top" } },
+        { text: discrepancyChunks, options: { fill: bgHex, align: "left", valign: "top" } },
+        { text: etpChunks, options: { fill: bgHex, align: "left", valign: "top" } }
+      ]);
+    });
+
+    const colW1 = 0.5;
+    const remainingW = availableWidth - colW1;
+    const colW2 = remainingW * 0.30;
+    const colW3 = remainingW * 0.35;
+    const colW4 = remainingW * 0.35;
+
+    slide.addTable(tableRows, {
+      x: marginX,
+      y: 1.15,
+      w: availableWidth,
+      colW: [colW1, colW2, colW3, colW4],
+      border: { type: "solid", color: "CBD5E1", pt: 1 },
+      margin: [4, 6, 4, 6],
+      valign: "top"
+    });
+
+    // Divider for footer
+    slide.addShape(pptx.ShapeType.rect, {
+      x: marginX,
+      y: 7.0,
+      w: availableWidth,
+      h: 0.02,
+      fill: { color: "E2E8F0" }
+    });
+
+    slide.addText(`Slide ${i / itemsPerSlide + 2} — Rating Scheme Discrepancies and Exceptions to Policy (ETPs)`, {
+      x: marginX,
+      y: 7.05,
+      w: availableWidth,
+      h: 0.3,
+      color: "64748B",
+      fontSize: 8.5,
+      valign: "middle"
+    });
+  }
+}
+
+/**
  * Exports single profile Army Rating Scheme to PowerPoint
  */
 export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "Army Rating Scheme", chartDate: string = "") {
@@ -569,7 +887,11 @@ export function exportToPPTX(records: ArmyRatingRecord[], titleText: string = "A
   pptx.defineLayout({ name: "CUSTOM_LAYOUT", width: reqWidth, height: 7.5 });
   pptx.layout = "CUSTOM_LAYOUT";
 
+  // Slide 1: Visual Org Chart Bubble Map
   drawOrgChartSlide(pptx, records, titleText, chartDate, reqWidth);
+
+  // Slide 2: Discrepancies / ETPs
+  drawDiscrepanciesSlide(pptx, records, titleText, reqWidth);
 
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -614,11 +936,20 @@ export function exportMultiProfileBubbleMapToPPTX(
       : `${p.schemeName} CURRENT AS OF ${todayStr}`;
     const slideTitle = p.slideTitle || defaultTitle;
 
+    // Org Chart Slide
     drawOrgChartSlide(
       pptx,
       p.records,
       slideTitle,
       "",
+      maxRequiredWidth
+    );
+
+    // Discrepancies Slide for this profile
+    drawDiscrepanciesSlide(
+      pptx,
+      p.records,
+      slideTitle,
       maxRequiredWidth
     );
   });

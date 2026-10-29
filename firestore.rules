@@ -49,7 +49,7 @@ service cloud.firestore {
 
     function isValidArmyRatingRecord(data) {
       return data.keys().hasAll(['id', 'schemeId', 'userId', 'element', 'rank', 'name', 'role']) &&
-             data.keys().size() <= 40 &&
+             data.keys().size() <= 50 &&
              data.id is string && data.id.size() <= 128 &&
              data.schemeId is string && data.schemeId.size() <= 128 &&
              data.userId is string && data.userId.size() <= 128 &&
@@ -72,6 +72,10 @@ service cloud.firestore {
              (!data.keys().hasAny(['elementKeyLeaderTitle']) || data.elementKeyLeaderTitle == null || (data.elementKeyLeaderTitle is string && data.elementKeyLeaderTitle.size() <= 400)) &&
              (!data.keys().hasAny(['isUnitKeyLeader']) || data.isUnitKeyLeader is bool) &&
              (!data.keys().hasAny(['keyLeaderTitle']) || data.keyLeaderTitle == null || (data.keyLeaderTitle is string && data.keyLeaderTitle.size() <= 400)) &&
+             (!data.keys().hasAny(['etpReason']) || data.etpReason == null || (data.etpReason is string && data.etpReason.size() <= 2000)) &&
+             (!data.keys().hasAny(['etpStatus']) || data.etpStatus == null || (data.etpStatus is string && data.etpStatus.size() <= 100)) &&
+             (!data.keys().hasAny(['etpApprovedDate']) || data.etpApprovedDate == null || (data.etpApprovedDate is string && data.etpApprovedDate.size() <= 100)) &&
+             (!data.keys().hasAny(['etpNotes']) || data.etpNotes == null || (data.etpNotes is string && data.etpNotes.size() <= 5000)) &&
              (!data.keys().hasAny(['ncoerStatus']) || data.ncoerStatus == null || (data.ncoerStatus is string && data.ncoerStatus.size() <= 200)) &&
              (!data.keys().hasAny(['ncoerStatusDate']) || data.ncoerStatusDate == null || (data.ncoerStatusDate is string && data.ncoerStatusDate.size() <= 100)) &&
              (!data.keys().hasAny(['isLateMode']) || data.isLateMode is bool) &&
@@ -215,7 +219,7 @@ service cloud.firestore {
                         'element', 'dutyMosc', 'rank', 'name', 'from', 'thru', 'dueHqda',
                         'raterId', 'raterEffectiveDate', 'seniorRaterId', 'seniorRaterEffectiveDate',
                         'reviewerId', 'reviewerEffectiveDate', 'submissionType', 'role', 'version', 
-                        'elementKeyLeaderTitle', 'isUnitKeyLeader', 'keyLeaderTitle', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
+                        'elementKeyLeaderTitle', 'isUnitKeyLeader', 'keyLeaderTitle', 'etpReason', 'etpStatus', 'etpApprovedDate', 'etpNotes', 'ncoerStatus', 'ncoerStatusDate', 'isLateMode', 
                         'lateRaterId', 'lateSeniorRaterId',
                         'priorThru', 'priorDueHqda', 'isCustomStatus', 'corNewRaterId', 
                         'corEffectiveDate', 'parentRecordId', 'isHistoryEntry', 'updatedAt'

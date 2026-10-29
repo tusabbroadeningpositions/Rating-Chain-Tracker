@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { ArmyRatingRecord, RatingRole, SENIOR_RATER_RANKS, formatNameToLastFirstRank, isLooksLikeId } from "../types";
 import { inferRoleFromRankAndTitle } from "../utils/csvHandler";
 import { add90Days, calculateThruDate } from "../utils/dateUtils";
-import { Plus, Check, X, RotateCcw, ChevronDown, AlertTriangle } from "lucide-react";
+import { Plus, Check, X, RotateCcw, ChevronDown, AlertTriangle, ShieldAlert } from "lucide-react";
 
 interface RatingFormProps {
   records: ArmyRatingRecord[];
@@ -53,6 +53,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
   const [customStatusText, setCustomStatusText] = useState("");
   const [lateRaterId, setLateRaterId] = useState("");
   const [lateSeniorRaterId, setLateSeniorRaterId] = useState("");
+  const [etpReason, setEtpReason] = useState("");
+  const [etpStatus, setEtpStatus] = useState<"pending" | "approved" | "none" | string>("pending");
+  const [etpApprovedDate, setEtpApprovedDate] = useState("");
+  const [etpNotes, setEtpNotes] = useState("");
 
   const [srChangeProposal, setSrChangeProposal] = useState<{
     proposedSrId: string;
@@ -290,6 +294,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setSubmissionType(editingRecord.submissionType || "ANN");
       setCorNewRaterId(editingRecord.corNewRaterId || "");
       setCorEffectiveDate(editingRecord.corEffectiveDate || "");
+      setEtpReason(editingRecord.etpReason || "");
+      setEtpStatus(editingRecord.etpStatus || "pending");
+      setEtpApprovedDate(editingRecord.etpApprovedDate || "");
+      setEtpNotes(editingRecord.etpNotes || "");
     } else {
       // Set defaults for a new record
       setName("");
@@ -301,6 +309,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       setCustomKeyLeaderTitle("");
       setIsCustomKeyLeader(false);
       setKeyLeaderTitle("");
+      setEtpReason("");
+      setEtpStatus("pending");
+      setEtpApprovedDate("");
+      setEtpNotes("");
       
       // Default to 1-year dates or relevant dates
       const today = new Date();
@@ -407,6 +419,10 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
       elementKeyLeaderTitle: elementKeyLeaderTitle.trim(),
       isUnitKeyLeader,
       keyLeaderTitle: isUnitKeyLeader ? keyLeaderTitle.trim() : "",
+      etpReason: etpReason.trim() || undefined,
+      etpStatus: (etpReason.trim() || etpNotes.trim() || editingRecord?.etpReason) ? etpStatus : undefined,
+      etpApprovedDate: etpStatus === "approved" ? (etpApprovedDate || undefined) : undefined,
+      etpNotes: etpNotes.trim() || undefined,
       ncoerStatus: isCustomStatus ? customStatusText.trim() : ncoerStatus,
       ncoerStatusDate: ncoerStatusDate || undefined,
       lateRaterId: (ncoerStatus === "Late" || (isCustomStatus && customStatusText.toLowerCase().includes("late")) || !!editingRecord?.priorThru) ? lateRaterId : undefined,
@@ -1390,6 +1406,78 @@ export default function RatingForm({ records, allRecords, onSave, onCancel, edit
             </div>
           </div>
         )}
+
+        {/* Exception to Policy (ETP) / Discrepancy Section */}
+        <div className="pt-4 border-t border-slate-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-500" />
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Exception to Policy (ETP) / Discrepancy Info
+              </label>
+            </div>
+            <span className="text-[10px] text-slate-400 font-medium">Optional for rule variances</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Reason for discrepancy & ETP */}
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Reason for Discrepancy & Reason for Exception to Policy
+              </label>
+              <textarea
+                rows={2}
+                value={etpReason}
+                onChange={(e) => setEtpReason(e.target.value)}
+                placeholder="Enter justification / operational reason for discrepancy and why an ETP is requested..."
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              />
+            </div>
+
+            {/* ETP Status */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Exception to Policy Status
+              </label>
+              <select
+                value={etpStatus}
+                onChange={(e) => setEtpStatus(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              >
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="none">None / Not Requested</option>
+              </select>
+            </div>
+
+            {/* Date of Approved ETP */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Date of Approved ETP
+              </label>
+              <input
+                type="date"
+                value={etpApprovedDate}
+                onChange={(e) => setEtpApprovedDate(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50 font-mono"
+              />
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Notes
+              </label>
+              <textarea
+                rows={2}
+                value={etpNotes}
+                onChange={(e) => setEtpNotes(e.target.value)}
+                placeholder="Additional notes, memorandum tracking numbers, endorsement details..."
+                className="w-full px-3 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 bg-slate-50/50"
+              />
+            </div>
+          </div>
+        </div>
       </div>
       </div>
 

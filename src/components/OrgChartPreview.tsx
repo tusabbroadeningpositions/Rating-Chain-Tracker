@@ -8,11 +8,13 @@ import { motion } from "motion/react";
 import { ArmyRatingRecord, RatingRole, formatNameToLastFirstRank } from "../types";
 import { organizeChartData, getRoleColors } from "../utils/orgChartLayout";
 import { exportToPPTX } from "../utils/pptxExport";
-import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle, HelpCircle, History as HistoryIcon } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, FileDown, Printer, Info, User, ChevronRight, Calendar, AlertTriangle, HelpCircle, History as HistoryIcon, ShieldAlert } from "lucide-react";
+import DiscrepancyEtpModal from "./DiscrepancyEtpModal";
 
 interface OrgChartPreviewProps {
   records: ArmyRatingRecord[];
   onEditClick: (record: ArmyRatingRecord) => void;
+  onUpdateRecord?: (record: ArmyRatingRecord) => void;
   readOnly?: boolean;
   activeSchemeName?: string;
   selectedVersion?: string;
@@ -94,7 +96,8 @@ export default function OrgChartPreview({
   proposedDate,
   schemes = [],
   activeSchemeId,
-  onSelectScheme
+  onSelectScheme,
+  onUpdateRecord
 }: OrgChartPreviewProps) {
   const [zoom, setZoom] = useState(0.95);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,7 @@ export default function OrgChartPreview({
   });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ArmyRatingRecord | null>(null);
+  const [etpModalRecord, setEtpModalRecord] = useState<ArmyRatingRecord | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const archivedVersions = React.useMemo(() => {
@@ -1380,6 +1384,42 @@ export default function OrgChartPreview({
                         </p>
                       </div>
                     )}
+
+                    {/* Exception to Policy (ETP) Card */}
+                    {(seniorRaterMismatch || reviewerMismatch || seniorNcoNotRating || twoRanksAboveRater || sameRankRater || selectedNode.etpReason || selectedNode.etpStatus) && (
+                      <div className="p-3 bg-slate-800/90 border border-slate-700 rounded-md space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-amber-400 flex items-center gap-1.5">
+                            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Exception to Policy (ETP)</span>
+                          </span>
+                          {selectedNode.etpStatus && (
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${
+                              selectedNode.etpStatus.toLowerCase() === "approved"
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                            }`}>
+                              {selectedNode.etpStatus}
+                            </span>
+                          )}
+                        </div>
+                        {selectedNode.etpReason && (
+                          <p className="text-[10px] text-slate-300 line-clamp-2 italic">
+                            "{selectedNode.etpReason}"
+                          </p>
+                        )}
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => setEtpModalRecord(selectedNode)}
+                            className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                          >
+                            <ShieldAlert className="w-3 h-3" />
+                            <span>{selectedNode.etpReason || selectedNode.etpStatus ? "Edit ETP Information" : "Add ETP for Discrepancy"}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-4 border-t border-slate-800 space-y-3">
@@ -1479,6 +1519,25 @@ export default function OrgChartPreview({
         </div>
       </div>
     </div>
-  </div>
-);
+
+      {etpModalRecord && (
+        <DiscrepancyEtpModal
+          record={etpModalRecord}
+          allRecords={allRecords.length > 0 ? allRecords : records}
+          isOpen={!!etpModalRecord}
+          onClose={() => setEtpModalRecord(null)}
+          onSave={(updatedRecord) => {
+            if (onUpdateRecord) {
+              onUpdateRecord(updatedRecord);
+            }
+            if (selectedNode?.id === updatedRecord.id) {
+              setSelectedNode(updatedRecord);
+            }
+            setEtpModalRecord(null);
+          }}
+          readOnly={readOnly}
+        />
+      )}
+    </div>
+  );
 }

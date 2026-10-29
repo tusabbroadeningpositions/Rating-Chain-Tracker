@@ -499,14 +499,18 @@ export default function App() {
       } else {
         await saveRecord(recordWithVersion, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
         
-        // Sync NCOER status fields across all versions of this soldier in Firebase
+        // Sync NCOER status and ETP fields across all versions of this soldier in Firebase
         const searchName = recordWithVersion.name.trim().toLowerCase();
-        const ncoerFields = {
+        const syncedFields = {
           ncoerStatus: recordWithVersion.ncoerStatus,
           isCustomStatus: recordWithVersion.isCustomStatus,
           ncoerStatusDate: recordWithVersion.ncoerStatusDate,
           priorThru: recordWithVersion.priorThru,
-          priorDueHqda: recordWithVersion.priorDueHqda
+          priorDueHqda: recordWithVersion.priorDueHqda,
+          etpReason: recordWithVersion.etpReason,
+          etpStatus: recordWithVersion.etpStatus,
+          etpApprovedDate: recordWithVersion.etpApprovedDate,
+          etpNotes: recordWithVersion.etpNotes
         };
         const matchesToSync = records.filter(r => 
           r.id !== recordWithVersion.id && 
@@ -515,7 +519,7 @@ export default function App() {
         if (matchesToSync.length > 0) {
           const syncedRecords = matchesToSync.map(r => ({
             ...r,
-            ...ncoerFields
+            ...syncedFields
           }));
           await batchSaveRecords(syncedRecords, currentScheme?.userId || user?.uid || "guest", activeSchemeId);
         }
@@ -529,18 +533,22 @@ export default function App() {
         updated = [...records, recordWithVersion];
       }
       
-      // Sync NCOER status fields across all versions of this soldier in Guest Mode
+      // Sync NCOER status and ETP fields across all versions of this soldier in Guest Mode
       const searchName = recordWithVersion.name.trim().toLowerCase();
-      const ncoerFields = {
+      const syncedFields = {
         ncoerStatus: recordWithVersion.ncoerStatus,
         isCustomStatus: recordWithVersion.isCustomStatus,
         ncoerStatusDate: recordWithVersion.ncoerStatusDate,
         priorThru: recordWithVersion.priorThru,
-        priorDueHqda: recordWithVersion.priorDueHqda
+        priorDueHqda: recordWithVersion.priorDueHqda,
+        etpReason: recordWithVersion.etpReason,
+        etpStatus: recordWithVersion.etpStatus,
+        etpApprovedDate: recordWithVersion.etpApprovedDate,
+        etpNotes: recordWithVersion.etpNotes
       };
       updated = updated.map(r => {
         if (r.id !== recordWithVersion.id && r.name.trim().toLowerCase() === searchName) {
-          return { ...r, ...ncoerFields };
+          return { ...r, ...syncedFields };
         }
         return r;
       });
@@ -1473,6 +1481,7 @@ export default function App() {
                   schemes={schemes}
                   activeSchemeId={activeSchemeId || undefined}
                   onSelectScheme={setActiveSchemeId}
+                  onUpdateRecord={handleSaveRecord}
                 />
               )}
 
