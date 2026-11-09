@@ -307,7 +307,7 @@ export default function OrgChartPreview({
       ? `${activeSchemeName} PROJECTED ${dateToUse}`
       : `${activeSchemeName} CURRENT AS OF ${dateToUse}`;
 
-    exportToPPTX(records, titleHeader, "");
+    exportToPPTX(records, titleHeader, dateToUse);
   };
 
   // Browser Print trigger

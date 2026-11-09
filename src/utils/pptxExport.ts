@@ -48,6 +48,70 @@ function formatArmyDate(dateStr: string): string {
 }
 
 /**
+ * Helper to extract and format month and year (e.g. "November 2026") in Calibri font
+ */
+export function getFormattedMonthYearDate(chartDate?: string, titleText?: string): string {
+  const MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+
+  const searchStr = `${chartDate || ""} ${titleText || ""}`.trim();
+
+  // 1. Try MM-DD-YYYY or MM/DD/YYYY or M/D/YYYY
+  const usMatch = searchStr.match(/\b(0?[1-9]|1[0-2])[-\/](0?[1-9]|[12]\d|3[01])[-\/](20\d\d)\b/);
+  if (usMatch) {
+    const monthIdx = parseInt(usMatch[1], 10) - 1;
+    const year = usMatch[3];
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${MONTHS[monthIdx]} ${year}`;
+    }
+  }
+
+  // 2. Try YYYY-MM-DD or YYYY/MM/DD or YYYY-MM
+  const isoMatch = searchStr.match(/\b(20\d\d)[-\/](0?[1-9]|1[0-2])([-\/](0?[1-9]|[12]\d|3[01]))?\b/);
+  if (isoMatch) {
+    const year = isoMatch[1];
+    const monthIdx = parseInt(isoMatch[2], 10) - 1;
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${MONTHS[monthIdx]} ${year}`;
+    }
+  }
+
+  // 3. Try YYYYMMDD
+  const compactMatch = searchStr.match(/\b(20\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+  if (compactMatch) {
+    const year = compactMatch[1];
+    const monthIdx = parseInt(compactMatch[2], 10) - 1;
+    if (monthIdx >= 0 && monthIdx < 12) {
+      return `${MONTHS[monthIdx]} ${year}`;
+    }
+  }
+
+  // 4. Try explicit month name e.g. November 2026
+  const monthNameMatch = searchStr.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d\d)\b/i);
+  if (monthNameMatch) {
+    const monthName = monthNameMatch[1];
+    const year = monthNameMatch[2];
+    const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1).toLowerCase();
+    return `${capitalizedMonth} ${year}`;
+  }
+
+  // 5. Try JS Date.parse on chartDate
+  if (chartDate) {
+    const parsedTime = Date.parse(chartDate);
+    if (!isNaN(parsedTime)) {
+      const d = new Date(parsedTime);
+      return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    }
+  }
+
+  // Fallback to current date
+  const now = new Date();
+  return `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+}
+
+/**
  * Exports the Army Rating Scheme records to a high-quality PowerPoint slide
  * that perfectly mirrors the layout in the user's reference image.
  */
@@ -239,25 +303,7 @@ export function drawOrgChartSlide(
   const actualW = totalDrawnWidth > 0 ? totalDrawnWidth : availableWidth;
   const startX = totalDrawnWidth > 0 ? marginX + (availableWidth - totalDrawnWidth) / 2 : marginX;
 
-  // Header Title Text at top if provided
-  if (titleText && titleText !== "Army Rating Scheme") {
-    let headerText = titleText.toUpperCase();
-    if (chartDate && !headerText.includes("CURRENT AS OF") && !headerText.includes("PROJECTED")) {
-      headerText = `${headerText} CURRENT AS OF ${chartDate.toUpperCase()}`;
-    }
-
-    slide.addText(headerText, {
-      x: marginX,
-      y: 0.01,
-      w: availableWidth,
-      h: 0.18,
-      fontSize: 8.5,
-      fontFace: "Inter",
-      color: "334155",
-      bold: true,
-      align: "center"
-    });
-  }
+  // Note: Top header title is omitted per layout design (chart starts directly at top)
 
   // --- Draw Row 1: OIC ---
   if (organized.oic) {
@@ -499,16 +545,16 @@ export function drawOrgChartSlide(
     });
   }
 
-  // --- Draw LEGEND ---
+  // --- Draw LEGEND (Far Left) ---
   slide.addText("LEGEND", {
     x: marginX,
-    y: legendTitleY,
-    w: availableWidth,
-    h: 0.3,
-    align: "center",
+    y: 6.35,
+    w: 5.0,
+    h: 0.35,
+    align: "left",
     valign: "middle",
-    fontSize: 12,
-    fontFace: "Inter",
+    fontSize: 13,
+    fontFace: "Calibri",
     color: "000000",
     bold: true
   });
@@ -521,43 +567,55 @@ export function drawOrgChartSlide(
     { name: "Section Leader", role: RatingRole.SECTION_LEADER },
     { name: "Master Musician", role: RatingRole.MASTER_MUSICIAN },
     { name: "Senior Musician", role: RatingRole.SENIOR_MUSICIAN },
-    { name: "Senior Support", role: RatingRole.SENIOR_SUPPORT_MUSICIAN },
-    { name: "Musician", role: RatingRole.MUSICIAN },
-    { name: "Support", role: RatingRole.SUPPORT_MUSICIAN }
+    { name: "Musician", role: RatingRole.MUSICIAN }
   ];
 
   const legendItemW = 1.15;
-  const legendGap = 0.08;
-  const totalLegendW = (legendRoles.length * legendItemW) + ((legendRoles.length - 1) * legendGap);
-  const legendStartX = (slideWidth - totalLegendW) / 2;
+  const legendGap = 0.05;
 
   legendRoles.forEach((item, index) => {
-    const xItem = legendStartX + index * (legendItemW + legendGap);
+    const xItem = marginX + index * (legendItemW + legendGap);
     const colors = getRoleColors(item.role);
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: xItem,
-      y: legendY,
+      y: 6.75,
       w: legendItemW,
-      h: 0.35,
+      h: 0.38,
       fill: { color: colors.hexBg },
-      line: { color: colors.hexBorder, width: 1 }
+      line: { color: "000000", width: 1 }
     });
 
     slide.addText(item.name, {
       x: xItem,
-      y: legendY,
+      y: 6.75,
       w: legendItemW,
-      h: 0.35,
+      h: 0.38,
       align: "center",
       valign: "middle",
       fontSize: 8,
-      fontFace: "Inter",
+      fontFace: "Calibri",
       color: colors.hexText,
       bold: true,
       margin: 0,
       autoFit: true
     });
+  });
+
+  // --- Draw Date (Bottom Right, Calibri font 18, Month Spelled Out) ---
+  const formattedMonthYear = getFormattedMonthYearDate(chartDate, titleText);
+
+  slide.addText(formattedMonthYear, {
+    x: slideWidth - marginX - 6.0,
+    y: 6.55,
+    w: 6.0,
+    h: 0.6,
+    align: "right",
+    valign: "middle",
+    fontSize: 18,
+    fontFace: "Calibri",
+    color: "000000",
+    bold: false
   });
 }
 
