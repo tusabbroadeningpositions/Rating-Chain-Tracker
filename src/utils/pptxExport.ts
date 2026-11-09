@@ -264,8 +264,8 @@ export function drawOrgChartSlide(
   const yColHeader = yGroupLeader + rowHeight + rowGap;
   const yVerticalStackStart = yColHeader + rowHeight + rowGap;
 
-  const legendY = 6.85;
-  const legendTitleY = 6.45;
+  const legendY = 7.14;
+  const legendTitleY = 6.78;
   const maxVerticalHeight = legendTitleY - yVerticalStackStart - 0.15;
 
   const cardRowGap = 0.1;
@@ -545,10 +545,10 @@ export function drawOrgChartSlide(
     });
   }
 
-  // --- Draw LEGEND (Far Left) ---
+  // --- Draw LEGEND (Far Left, Very Bottom) ---
   slide.addText("LEGEND", {
     x: marginX,
-    y: 6.35,
+    y: legendTitleY,
     w: 5.0,
     h: 0.35,
     align: "left",
@@ -579,18 +579,18 @@ export function drawOrgChartSlide(
 
     slide.addShape(pptx.ShapeType.roundRect, {
       x: xItem,
-      y: 6.75,
+      y: legendY,
       w: legendItemW,
-      h: 0.38,
+      h: 0.36,
       fill: { color: colors.hexBg },
       line: { color: "000000", width: 1 }
     });
 
     slide.addText(item.name, {
       x: xItem,
-      y: 6.75,
+      y: legendY,
       w: legendItemW,
-      h: 0.38,
+      h: 0.36,
       align: "center",
       valign: "middle",
       fontSize: 8,
@@ -607,9 +607,9 @@ export function drawOrgChartSlide(
 
   slide.addText(formattedMonthYear, {
     x: slideWidth - marginX - 6.0,
-    y: 6.55,
+    y: 6.95,
     w: 6.0,
-    h: 0.6,
+    h: 0.55,
     align: "right",
     valign: "middle",
     fontSize: 18,
